@@ -57,10 +57,10 @@
       "$ref": "#/$defs/revisionRef"
     },
     "benchmark": {
-      "description": "Exact code that defined and executed the workload. A reported coordinate that policy normally maps to a declared benchmark version. Optional only for thin local results with no benchmark repository.",
+      "description": "Exact code that defined and executed the workload. A reported coordinate that policy normally maps to a declared benchmark version. Optional only for thin local results with no benchmark repository. `revision` is itself optional when the benchmark code has no VCS (work-order benchmark.kind: directory); such a result is identified by provenance.benchmark_tree instead, and provenance.benchmark_dirty is then always \"dirty\".",
       "type": "object",
       "additionalProperties": false,
-      "required": ["source", "revision"],
+      "required": ["source"],
       "properties": {
         "source": { "$ref": "#/$defs/sourceRef" },
         "revision": { "$ref": "#/$defs/revisionRef" }
@@ -410,6 +410,14 @@
         }
       },
       "then": { "properties": { "provenance": { "required": ["references"] } } }
+    },
+    {
+      "$comment": "Unversioned benchmark code (work-order benchmark.kind: directory) has a source but no revision; such a tree can never be shown clean.",
+      "if": {
+        "required": ["benchmark"],
+        "properties": { "benchmark": { "not": { "required": ["revision"] } } }
+      },
+      "then": { "properties": { "provenance": { "properties": { "benchmark_dirty": { "const": "dirty" } } } } }
     }
   ],
   "$defs": {

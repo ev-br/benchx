@@ -35,6 +35,7 @@ A work order (`benchx/work-order/0.1.0`) has four required groups matching `runn
 | `suites[]` | array | yes | what | `{adapter, suite, include[], exclude[], parameters}` per harness suite | `coordinates.workload` via the adapter |
 | `quantities[]` | array of names | yes | what | Quantities to collect, e.g. `wall-time`, `peak-rss` | `coordinates.quantity` |
 | `target` | one of 4 kinds | yes | at what | What code to measure (§3.1) | `source`, `revision`, dirty flags, tree ids |
+| `benchmark` | one of 3 kinds | no | at what | Where the benchmark code lives, when it is not the target's own checkout (§3.1a) | `benchmark.source`/`revision`, `benchmark_dirty`, `benchmark_tree` |
 | `components[]` | array | no | at what | Pinned non-primary components `{name, role, source, revision}` | `coordinates.subject.components` |
 | `build` | object | no | how | `{profile, type, compiler, flags[], options{}, cache}` | `coordinates.subject.configuration` |
 | `precision` | object | yes | how | `{repetitions, min_time_s, warmups, inner_iterations}` (harness-neutral names, from Appendix B keys) | intended: `comparison_context`; realized: `procedure` |
@@ -56,6 +57,28 @@ A work order (`benchx/work-order/0.1.0`) has four required groups matching `runn
 | `working_tree` | `path`, `source.uri` | Records HEAD, dirty state, and tree id as found; never cleans the tree |
 | `build` | `path`, `source.uri` | Build config and staleness vs. the tree it came from (`runner.md` open question 3) |
 | `artifact` | `uri`, `sha256`, `source.uri`, `revision` | Checksum matches; `revision` is the artifact's declared source, taken on trust and flagged in `quality.warnings` |
+
+### 3.1a Benchmark location
+
+Benchmarks need not live in the repository being measured.
+`benchmark` is optional; when absent, the runner assumes the
+benchmark suite is the target's own checkout, which is today's implicit
+behavior and keeps every existing order valid unchanged. When present,
+`benchmark.kind` says otherwise:
+
+| `benchmark.kind` | Required fields | What the runner records |
+|---|---|---|
+| `colocated` | — (same as omitting `benchmark`) | Mirrors `target`'s revision, dirty flag, and tree id |
+| `repository` | `source.uri`, `revision` (full commit id) | Checks out (or verifies) that repository independently of `target`; reports its own `benchmark.source`, `benchmark.revision`, `benchmark_dirty`, `benchmark_tree` |
+| `directory` | `path`; `source.uri` optional | No commit to report: `benchmark_dirty` is always `dirty`, since an unversioned tree can never be shown clean, and `benchmark_tree` is a content hash of the directory (sorted relative paths and contents), the same non-git tree-id fallback `benchmark-result-schema.md` already allows for `subject_tree`. `benchmark.source` is included only if an upstream is known; `benchmark.revision` is never included |
+
+A `directory` benchmark covers a suite with no version control at all, such
+as pyperformance installed into the target environment (`pip install
+pyperformance`) or a benchmark directory vendored into an image. The result
+still names its benchmark code via `benchmark_tree`, so it is not thin on
+that account; what it cannot do is take part in an identity policy that
+projects an exact benchmark revision. A policy that keys on the tree, or one
+that omits benchmark identity, accepts it.
 
 ### 3.2 Draft and resolved orders
 
@@ -121,7 +144,8 @@ The runner fills existing measurement-result fields and defines no new ones. Wha
 | Subject commit | `revision.key` | Order refused; no measurement without a revision |
 | Subject dirty state | `provenance.subject_dirty` | `unknown`, never `clean` by default |
 | Subject tree hash | `provenance.subject_tree` | Omitted; comparators then treat it as not code-identical |
-| Benchmark code dirty state / tree | `provenance.benchmark_dirty`, `benchmark_tree` | as above |
+| Benchmark commit | `benchmark.revision` | Omitted, never refused, when `benchmark.kind: directory` (§3.1a); the order is refused for a `repository` benchmark that can't be resolved |
+| Benchmark code dirty state / tree | `provenance.benchmark_dirty`, `benchmark_tree` | `unknown`/omitted only when `benchmark` is absent entirely (no benchmark repository at all); `directory` always reports `dirty` plus a tree |
 | Build configuration | `coordinates.subject.configuration` | `quality.warnings`: `build_config_unverified` |
 | Runner software | `provenance.runner` `{name, version}` | never unknown |
 | Resolved work order | `provenance.artifacts` (kind `work-order`, URI + sha256) | never unknown |
@@ -267,6 +291,18 @@ A contributor measures an uncommitted Parquet change on a WSL2 laptop: the local
 ```
 
 WSL2 exposes no governor, temperature, or throttle counters, so all three are recorded as `unavailable`. The dirty tree makes any comparison using this result local-only (`benchmark-result-schema.md` §5.5).
+
+This order omits `benchmark`, so the benchmark suite is assumed to live in
+the Arrow checkout itself (`kind: colocated`). A pyperformance-style order,
+where the benchmarks are a separate, unversioned install, would instead add:
+
+```json
+"benchmark": {"kind": "directory", "path": "/usr/lib/python3.12/site-packages/pyperformance/benchmarks"}
+```
+
+producing `"benchmark_dirty": "dirty"` and a `benchmark_tree` content hash in
+the result's provenance, with no `benchmark` coordinate object at all since
+no revision is known.
 
 ## 9. Open questions
 
