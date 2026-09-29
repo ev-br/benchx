@@ -96,7 +96,7 @@ The core set is small and CPU/GPU generic. Project-specific checks use a namespa
 | `cpu.boost` | on/off | record | enforce off |
 | `cpu.smt` | on/off | record | verify |
 | `gpu.device` | index or UUID | enforce | enforce |
-| `gpu.clocks_locked` | MHz | — | enforce |
+| `gpu.clocks-locked` | MHz | — | enforce |
 | `accel.sync` | `events` \| `device-sync` | enforce | enforce |
 | `load.quiescent` | max 1-min load, window s | record | verify, refuse |
 | `hardware.present` | CPU model pattern, GPU count, min RAM | verify, warn | verify, refuse |
@@ -108,7 +108,7 @@ A laptop policy mostly records; a tuned-node policy mostly enforces. Both produc
 
 ### 4.2 Refusal is still a result
 
-`runner.md` §6 says an unsatisfiable policy refuses the run "with the reason reported". Principle 5 of the same document says every outcome is a result. This schema reconciles the two: a refusal emits one `error` result per `plan` entry with `measurement.reason = "policy_unsatisfied:<check>"`. Nothing is measured, but nothing goes missing either.
+`runner.md` §6 says an unsatisfiable policy refuses the run "with the reason reported". Principle 5 of the same document says every outcome is a result. This schema reconciles the two: a refusal emits one `error` result per `plan` entry with `measurement.reason = "policy-unsatisfied-<check>"`. Nothing is measured, but nothing goes missing either.
 
 ## 5. Run context
 
@@ -165,19 +165,19 @@ Every `plan` entry ends as exactly one result, using the five statuses the resul
 | Runner outcome | Stage | `measurement.status` | `measurement.reason` | Extra evidence |
 |---|---|---|---|---|
 | All requested repetitions completed | execute | `success` | — | — |
-| Some repetitions failed or were cut short | execute | `partial` | `repetitions_incomplete` | `procedure.completed_repetitions` |
-| Case exceeded `timeouts.case_s`, time quantity | execute | `censored` | `timeout_case` | constraint `lower_bound` = `case_s` |
-| Case exceeded `timeouts.case_s`, other quantity | execute | `error` | `timeout_case` | — |
+| Some repetitions failed or were cut short | execute | `partial` | `repetitions-incomplete` | `procedure.completed_repetitions` |
+| Case exceeded `timeouts.case_s`, time quantity | execute | `censored` | `timeout-case` | constraint `lower_bound` = `case_s` |
+| Case exceeded `timeouts.case_s`, other quantity | execute | `error` | `timeout-case` | — |
 | Harness explicitly skipped the case | execute | `skipped` | harness's own reason | — |
-| Harness crashed mid-suite (remaining entries) | execute | `error` | `harness_crashed` | log in `provenance.artifacts` |
-| Adapter could not translate output | emit | `error` | `adapter_error` | raw output as artifact |
-| Build failed | resolve target | `error` (every entry) | `build_failed` | build log artifact |
-| Policy check failed with `refuse` | prepare | `error` (every entry) | `policy_unsatisfied:<check>` | check result in `observed_context` |
-| `timeouts.order_s` exceeded (unstarted entries) | any | `error` | `timeout_order` | — |
+| Harness crashed mid-suite (remaining entries) | execute | `error` | `harness-crashed` | log in `provenance.artifacts` |
+| Adapter could not translate output | emit | `error` | `adapter-error` | raw output as artifact |
+| Build failed | resolve target | `error` (every entry) | `build-failed` | build log artifact |
+| Policy check failed with `refuse` | prepare | `error` (every entry) | `policy-unsatisfied-<check>` | check result in `observed_context` |
+| `timeouts.order_s` exceeded (unstarted entries) | any | `error` | `timeout-order` | — |
 | Policy check failed with `warn` | prepare / after | unchanged | — | `quality.warnings` entry |
 | Runner process killed | any | no result | — | resolved order shows the gap |
 
-Reasons are drawn from a closed list of codes, optionally followed by `:<detail>`, so dashboards can group failures without parsing free text.
+Reasons are drawn from a closed list of codes, optionally followed by a hyphen and a detail, so dashboards can group failures by prefix without parsing free text.
 
 ## 7. Versioning and hashing
 
@@ -272,7 +272,7 @@ WSL2 exposes no governor, temperature, or throttle counters, so all three are re
 
 1. **Multi-node benchmarks.** 0.1.0 targets one node per order. Should a later version allow a node group (`target.nodes[]` plus a coordinator role), or should a distributed benchmark stay a harness concern behind a single coordinator runner?
 2. **Who stores resolved orders?** The order doubles as the run manifest, but the runner is store-unaware. Does the runner upload the order as an artifact alongside results, or does the requester (scheduler, workbench) keep it?
-3. **Build failure before the plan exists.** §3.2 lets the runner expand `plan` after the build for harnesses that enumerate cases only then. If that build fails there are no plan entries to attach `error` results to. Does the runner emit a single order-level `build_failed` result, and under which workload coordinates?
+3. **Build failure before the plan exists.** §3.2 lets the runner expand `plan` after the build for harnesses that enumerate cases only then. If that build fails there are no plan entries to attach `error` results to. Does the runner emit a single order-level `build-failed` result, and under which workload coordinates?
 4. **Should the observation-record convention move into the result schema?** Today `observed_context` is an open object. Making `{value, status, when, source}` normative there would let every producer, not just this runner, mark facts `unavailable`.
 5. **Sampling overhead.** Sampling temperature and frequency during execution can itself disturb the measurement. What default interval (e.g. 1 s) and core placement keep it negligible, and should the policy be able to turn sampling off?
 6. **Build caching** (`runner.md` open question 1). `build.cache` is modeled as `reuse` | `fresh` | `require-cached`. Is a build its own cacheable artifact with a hash that the order can reference instead?
