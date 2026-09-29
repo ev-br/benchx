@@ -4,11 +4,11 @@
   "rules": [
     { "check": "threads.max", "tier": "enforce", "parameters": { "n": 1 } },
     { "check": "cpu.affinity", "tier": "enforce", "parameters": { "cpus": "0-7" } },
-    { "check": "cpu.governor", "tier": "enforce", "parameters": { "governor": "performance" } },
-    { "check": "cpu.boost", "tier": "enforce", "parameters": { "boost": false } },
+    { "check": "cpu.governor", "tier": "verify", "on_fail": "refuse", "parameters": { "governor": "performance" } },
+    { "check": "cpu.boost", "tier": "verify", "on_fail": "refuse", "parameters": { "boost": false } },
     { "check": "cpu.smt", "tier": "verify", "on_fail": "warn" },
     { "check": "gpu.device", "tier": "enforce", "parameters": { "index": 0 } },
-    { "check": "gpu.clocks-locked", "tier": "enforce", "parameters": { "mhz": 1500 } },
+    { "check": "gpu.clocks-locked", "tier": "verify", "on_fail": "refuse", "parameters": { "mhz": 1500 } },
     { "check": "accel.sync", "tier": "enforce", "parameters": { "mode": "device-sync" } },
     {
       "check": "load.quiescent",

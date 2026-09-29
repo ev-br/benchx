@@ -1,8 +1,8 @@
 # Runner Schemas: Work Order, Environment Policy, Run Context
 
-**Status:** Draft for review. **Authoritative** over `benchmark-environments.md` §2.2 principle 2, §2.3, and the runner-related items in §8's "Consequences for other design documents", and over the unmerged work-order proposal in `work-order.md`, where they conflict: this document's environment-policy model (enforce/verify/refuse, §4) and buildable target kinds (§3.1) stand as designed. The contradiction is not otherwise reconciled in either document as of this writing; see `benchmark-environments.md` §8 for the disputed text.
+**Status:** Draft for review. Aligned with `benchmark-environments.md` (§2.2, §2.3, §8): the runner receives a prebuilt target and never builds, it enforces only on the process it launches, and it verifies what the work order requests, refusing the run when it cannot be delivered. This document previously carried a target kind that checked out and built a revision, a build cache, and enforcement of machine state; those are removed.
 
-**Companion to:** `runner.md` (PR #24), `benchmark-result-schema.md`
+**Companion to:** `runner.md` (PR #24), `benchmark-result-schema.md`, `benchmark-environments.md`
 
 ## 1. Purpose and scope
 
@@ -36,10 +36,10 @@ A work order (`benchx/work-order/0.1.0`) has four required groups matching `runn
 | `quantities[]` | array of names | yes | what | Quantities to collect, e.g. `wall-time`, `peak-rss` | `coordinates.quantity` |
 | `environment_variables` | string map | no | what | `{NAME: value}` set on the measured process, on top of what the runner inherited; a workload coordinate, not a machine fact — `OMP_NUM_THREADS=1` and `=10` are different, non-pooling variants | `coordinates.workload.parameters` |
 | `workload_parameters` | map | no | what | Parameters passed to the runner or harness, never as environment variables; a name may not appear in both maps | `coordinates.workload.parameters` |
-| `target` | one of 4 kinds | yes | at what | What code to measure (§3.1) | `source`, `revision`, dirty flags, tree ids |
+| `target` | one of 3 kinds | yes | at what | What code to measure (§3.1) | `source`, `revision`, dirty flags, tree ids |
 | `benchmark` | object | no | at what | `{source, revision}` naming where the benchmark suite's own code lives, when different from `target` (§3.3, added here to close a gap) | top-level `benchmark.source`, `benchmark.revision` |
 | `components[]` | array | no | at what | Pinned non-primary components `{name, role, source, revision}` | `coordinates.subject.components` |
-| `build` | object | no | how | `{profile, type, compiler, flags[], options{}, cache}` | `coordinates.subject.configuration` |
+| `build` | object | no | how | `{profile, type, compiler, flags[], options{}}`: the **declared** configuration of the prebuilt target, for facts the runner cannot read from it. Never an instruction to build | `coordinates.subject.configuration` |
 | `precision` | object | yes | how | `{repetitions, calibration, warmup}`, spelled per Appendix B (`repetitions` a bare int or `{mode: fixed, levels[]}`; `calibration.mode`: `adaptive` + `minimum_sample_seconds`, or `fixed` + `n_iterations`; `warmup.mode`: `none`, `count` + `n_warmup`, or `time` + `seconds`) | intended: `comparison_context`; realized: `procedure` |
 | `schedule` | object | no | how | `{kind: sequential \| alternating \| random, seed}` across sides | `comparison_context.protocol.schedule`; realized `procedure.slot` |
 | `timeouts` | object | yes | how | `{case_s, order_s}`, both positive | exceeded: `censored` or `error` result |
@@ -55,12 +55,11 @@ A work order (`benchx/work-order/0.1.0`) has four required groups matching `runn
 
 | `target.kind` | Required fields | What the runner must verify |
 |---|---|---|
-| `revision` | `source.uri`, `revision` (full commit id) | Checkout matches `revision`; tree is clean after checkout |
-| `working_tree` | `path`, `source.uri`; optional `source_dir` | Records HEAD, dirty state, and tree id as found at `source_dir` (default `path`); never cleans the tree |
-| `build` | `path`, `source.uri`; optional `source_dir` | Build config and staleness vs. the tree at `source_dir`, when it differs from what the build itself records (`runner.md` open question 3) |
+| `working_tree` | `path`, `source.uri`; optional `source_dir` | Records HEAD, dirty state, and tree id as found at `source_dir` (default `path`); never cleans or checks out the tree |
+| `build` | `path`, `source.uri`; optional `source_dir` | Build config and staleness vs. the tree at `source_dir`, when it differs from what the build itself records (`runner.md` open question 2) |
 | `artifact` | `uri`, `sha256`, `source.uri`, `revision` | Checksum matches; `revision` is the artifact's declared source, taken on trust and flagged in `quality.warnings` |
 
-`source.uri` names the canonical repository; `source_dir`, when given, is the local checkout path the runner inspects for revision/dirty/tree facts. Absent, the runner falls back to whatever the target itself records (e.g. a build directory's own `CMAKE_HOME_DIRECTORY`).
+All target kinds name something that already exists; none causes a checkout, configure, or build. `source.uri` names the canonical repository; `source_dir`, when given, is the local checkout path the runner inspects for revision/dirty/tree facts. Absent, the runner falls back to whatever the target itself records (e.g. a build directory's own `CMAKE_HOME_DIRECTORY`).
 
 ### 3.2 Draft and resolved orders
 
@@ -69,9 +68,9 @@ A person or tool may write a **draft**: a branch name instead of a commit, `incl
 Resolution happens as early as possible, and the runner fills in only what is left:
 
 - **Resolution only fills gaps.** It never changes a field that is already fixed, so a fully resolved order passes through the runner unchanged.
-- **The requester resolves shared facts.** The scheduler, CI job, or workbench fixes everything that must be identical across sibling orders in a `run_key`: commit ids for branch names, policy versions, precision defaults, and the case list when it is knowable without a build. Resolving these once is what keeps both sides of a comparison on the same values.
-- **The runner resolves only facts about its own machine.** These are working-tree state (HEAD, dirty flag, tree id), the case list for harnesses that enumerate cases only after a build, and the values actually enforced by the policy. It then records the resolved order as a provenance artifact before execution starts. A `plan` entry the runner filled in this way carries `from`, the suite's `filter` or `include` pattern it was expanded from, so a runner-resolved entry stays traceable to what generated it, distinct from one a scheduler hand-authored.
-- **The runner refuses unresolved shared fields.** A draft that still names a branch, or a policy without a version, is refused rather than resolved against the runner's local clone or cache. That would infer the run from leftovers on the machine, which `runner.md` principle 1 forbids.
+- **The requester resolves shared facts.** The scheduler, CI job, or workbench fixes everything that must be identical across sibling orders in a `run_key`: commit ids for branch names, policy versions, precision defaults, and the case list when it is knowable without running the target. Resolving these once is what keeps both sides of a comparison on the same values.
+- **The runner resolves only facts about its own machine.** These are working-tree state (HEAD, dirty flag, tree id), the case list for harnesses that enumerate cases only by listing them from the prebuilt target, and the values actually enforced by the policy. It then records the resolved order as a provenance artifact before execution starts. A `plan` entry the runner filled in this way carries `from`, the suite's `filter` or `include` pattern it was expanded from, so a runner-resolved entry stays traceable to what generated it, distinct from one a scheduler hand-authored.
+- **The runner refuses unresolved shared fields.** A draft that still names a branch, or a policy without a version, is refused rather than resolved against the runner's local clone. That would infer the run from leftovers on the machine, which `runner.md` principle 1 forbids.
 
 So a person on a laptop can hand the runner a loose draft whose target is `working_tree`, which is only meaningful on that machine anyway, while a fleet order arrives already pinned.
 
@@ -79,7 +78,7 @@ Where results are delivered (store URL, local file) is an invocation argument, n
 
 ### 3.3 Benchmark suite location (addendum)
 
-§3's field table and §3.1 name only the subject's target. Nothing in the original draft says where the *benchmark* suite's own code lives, yet every non-thin result requires `benchmark.source` and `benchmark.revision` (`benchmark-result-schema.md` §4.1, §5.2) alongside `provenance.benchmark_dirty`/`benchmark_tree`. This is a gap in the original design, closed here: an optional `benchmark` object, `{source, revision}`, mirroring `sourceRef` and a bare revision key the way `target.kind: revision` does. When present, the runner checks out and records that revision the same way it records `target`'s. When absent, the benchmarks are assumed to live in the same checkout as `target`, and the runner reuses `target`'s resolved source, revision, dirty flag, and tree for `benchmark.*` and `provenance.benchmark_dirty`/`benchmark_tree` — the common case where a project's benchmarks live alongside its own code. A benchmark suite with no version control at all (an installed, unversioned directory) is not covered by this addendum and remains open.
+§3's field table and §3.1 name only the subject's target. Nothing in the original draft says where the *benchmark* suite's own code lives, yet every non-thin result requires `benchmark.source` and `benchmark.revision` (`benchmark-result-schema.md` §4.1, §5.2) alongside `provenance.benchmark_dirty`/`benchmark_tree`. This is a gap in the original design, closed here: an optional `benchmark` object, `{source, revision}`, mirroring `sourceRef` and a bare revision key the way `target.kind: revision` does. When present, the runner records that revision the same way it records `target`'s, from the benchmark checkout it is pointed at; it does not fetch it. When absent, the benchmarks are assumed to live in the same checkout as `target`, and the runner reuses `target`'s resolved source, revision, dirty flag, and tree for `benchmark.*` and `provenance.benchmark_dirty`/`benchmark_tree` — the common case where a project's benchmarks live alongside its own code. A benchmark suite with no version control at all (an installed, unversioned directory) is not covered by this addendum and remains open.
 
 ## 4. Environment policy
 
@@ -87,7 +86,7 @@ A policy (`benchx/environment-policy/0.1.0`) is a named, versioned list of rules
 
 | Tier | Runner action | On failure | Lands in result as | Enters identity? |
 |---|---|---|---|---|
-| `enforce` | Sets the condition before execution | Refuse the order | `coordinates.environment.identity` (policy name + version + enforced values) | Yes |
+| `enforce` | Sets the condition on the launched process before execution; never changes machine state | Refuse the order | `coordinates.environment.identity` (policy name + version + enforced values) | Yes |
 | `verify` | Checks before, and optionally after, execution | `refuse` or `warn`, per rule | Result in `observed_context`; failures in `quality.warnings` | No |
 | `record` | Observes only | Never fails; unreadable = `unavailable` | `observed_context` | No |
 
@@ -95,17 +94,17 @@ Changing a policy's version changes environment identity, so it splits the serie
 
 ### 4.1 Core check vocabulary
 
-The core set is small and CPU/GPU generic. Project-specific checks use a namespaced prefix (`x-arrow.*`, `x-cupy.*`) so `runner.md` open question 2 can be settled case by case without a schema change.
+The core set is small and CPU/GPU generic. Project-specific checks use a namespaced prefix (`x-arrow.*`, `x-cupy.*`) so `runner.md` open question 1 can be settled case by case without a schema change.
 
 | Check | Parameters | Laptop policy | Tuned-node policy |
 |---|---|---|---|
 | `threads.max` | `n` | enforce | enforce |
 | `cpu.affinity` | CPU set | — | enforce |
-| `cpu.governor` | e.g. `performance` | record | enforce |
-| `cpu.boost` | on/off | record | enforce off |
+| `cpu.governor` | e.g. `performance` | record | verify, refuse |
+| `cpu.boost` | on/off | record | verify off, refuse |
 | `cpu.smt` | on/off | record | verify |
 | `gpu.device` | index or UUID | enforce | enforce |
-| `gpu.clocks-locked` | MHz | — | enforce |
+| `gpu.clocks-locked` | MHz | — | verify, refuse |
 | `accel.sync` | `events` \| `device-sync` | enforce | enforce |
 | `load.quiescent` | max 1-min load, window s | record | verify, refuse |
 | `hardware.present` | CPU model pattern, GPU count, min RAM | verify, warn | verify, refuse |
@@ -113,7 +112,7 @@ The core set is small and CPU/GPU generic. Project-specific checks use a namespa
 | `thermal.throttle` | counters to diff | record | verify, warn |
 | `thermal.temperature` | sensors, sample interval s | record | record |
 
-A laptop policy mostly records; a tuned-node policy mostly enforces. Both produce results in the same shape, which is what lets one runner serve both.
+Only conditions of the launched process (`threads.max`, `cpu.affinity`, `gpu.device`, `accel.sync`) can be `enforce`; machine state (`cpu.governor`, `cpu.boost`, `cpu.smt`, `gpu.clocks-locked`) is `verify` or `record`, because an operator sets it and the runner does not. A laptop policy mostly records; a tuned-node policy mostly verifies and enforces on the process. Both produce results in the same shape, which is what lets one runner serve both.
 
 ### 4.2 Refusal is still a result
 
@@ -180,7 +179,7 @@ Every `plan` entry ends as exactly one result, using the five statuses the resul
 | Harness explicitly skipped the case | execute | `skipped` | harness's own reason | — |
 | Harness crashed mid-suite (remaining entries) | execute | `error` | `harness-crashed` | log in `provenance.artifacts` |
 | Adapter could not translate output | emit | `error` | `adapter-error` | raw output as artifact |
-| Build failed | resolve target | `error` (every entry) | `build-failed` | build log artifact |
+| Target missing or not identifiable (no build directory, checksum mismatch) | identify target | `error` (every entry) | `target-unavailable` | detail in `provenance.info` |
 | Policy check failed with `refuse` | prepare | `error` (every entry) | `policy-unsatisfied-<check>` | check result in `observed_context` |
 | `timeouts.order_s` exceeded (unstarted entries) | any | `error` | `timeout-order` | — |
 | Policy check failed with `warn` | prepare / after | unchanged | — | `quality.warnings` entry |
@@ -229,7 +228,7 @@ A contributor measures an uncommitted Parquet change on a WSL2 laptop: the local
   "quantities": ["wall-time"],
   "target": {"kind": "working_tree", "path": "~/arrow",
              "source": {"uri": "https://github.com/apache/arrow", "type": "git"}},
-  "build": {"profile": "ninja-release", "type": "release", "compiler": "clang-18", "cache": "reuse"},
+  "build": {"profile": "ninja-release", "type": "release", "compiler": "clang-18"},
   "precision": {"repetitions": 5, "min_time_s": 0.01, "warmups": 1},
   "timeouts": {"case_s": 60, "order_s": 1800},
   "environment_policy": {"name": "laptop-default", "version": "1.0.0"},
@@ -284,9 +283,8 @@ WSL2 exposes no governor, temperature, or throttle counters, so all three are re
 
 1. **Multi-node benchmarks.** 0.1.0 targets one node per order. Should a later version allow a node group (`target.nodes[]` plus a coordinator role), or should a distributed benchmark stay a harness concern behind a single coordinator runner?
 2. **Who stores resolved orders?** The order doubles as the run manifest, but the runner is store-unaware. Does the runner upload the order as an artifact alongside results, or does the requester (scheduler, workbench) keep it?
-3. **Build failure before the plan exists.** §3.2 lets the runner expand `plan` after the build for harnesses that enumerate cases only then. If that build fails there are no plan entries to attach `error` results to. Does the runner emit a single order-level `build-failed` result, and under which workload coordinates?
+3. **Case listing failure before the plan exists.** §3.2 lets the runner expand `plan` by listing cases from the prebuilt target for harnesses that enumerate them only that way. If listing fails, or the target is unidentifiable, there are no plan entries to attach `error` results to. Does the runner emit a single order-level `target-unavailable` result, and under which workload coordinates?
 4. **Should the observation-record convention move into the result schema?** Today `observed_context` is an open object. Making `{value, status, when, source}` normative there would let every producer, not just this runner, mark facts `unavailable`.
 5. **Sampling overhead.** Sampling temperature and frequency during execution can itself disturb the measurement. What default interval (e.g. 1 s) and core placement keep it negligible, and should the policy be able to turn sampling off?
-6. **Build caching** (`runner.md` open question 1). `build.cache` is modeled as `reuse` | `fresh` | `require-cached`. Is a build its own cacheable artifact with a hash that the order can reference instead?
-7. **Delivery in the order?** This draft makes the result destination an invocation argument. Are there cases, such as CI, where the order should carry it?
-8. **Refusal as results.** §4.2 turns a policy refusal into one `error` result per plan entry, which goes beyond `runner.md` §6's "refused before execution". Keep that, or report refusals only to the requester?
+6. **Delivery in the order?** This draft makes the result destination an invocation argument. Are there cases, such as CI, where the order should carry it?
+7. **Refusal as results.** §4.2 turns a policy refusal into one `error` result per plan entry, which goes beyond `runner.md` §6's "refused before execution". Keep that, or report refusals only to the requester?

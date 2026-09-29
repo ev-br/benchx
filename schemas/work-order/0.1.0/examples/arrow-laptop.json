@@ -21,8 +21,7 @@
   "build": {
     "profile": "ninja-release",
     "type": "release",
-    "compiler": "clang-18",
-    "cache": "reuse"
+    "compiler": "clang-18"
   },
   "precision": {
     "repetitions": 5,

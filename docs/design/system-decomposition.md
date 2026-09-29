@@ -87,11 +87,15 @@ harness did not report.
 **Role:** Execute benchmark work on one compute node and report what happened.
 
 - Takes a work order — which benchmarks, at which revision or build, with
-  which parameters — and carries it out: obtains or builds the target,
-  invokes the harness, collects output through the adapter.
-- Controls and records the execution environment: thread caps, CPU pinning,
-  device selection and synchronization, warmup and JIT state. What it cannot
-  control, it records as observed context so no setting is lost from results.
+  which parameters — and carries it out: runs against a prepared target,
+  which it never builds, invokes the harness, collects output through the
+  adapter.
+- Controls and records the execution environment of the process it launches:
+  thread caps, CPU pinning, device selection and synchronization, warmup and
+  JIT state. It verifies that the hardware and conditions the order requests
+  are present, and refuses the run when they are not. What it does not control,
+  such as machine tuning, it records as observed context so no setting is lost
+  from results.
 - Captures identity honestly: machine, build configuration, compiler, source
   revision, dirty working tree. A result that cannot state where it came from
   is a defect.
@@ -233,7 +237,7 @@ Traceability, in brief — the pains each component exists to remove:
 |---|---|
 | Result store | history fragmenting on renames, machine swaps, parameter changes; raw samples discarded; no provenance for pasted numbers; failed vs. skipped vs. missing indistinguishable |
 | Harness adapters | seven languages landing in seven shapes; statistics lost in translation; workload parameters buried in counter blobs |
-| Runner | environment settings set by hand and recorded nowhere; GPU sync and JIT warmup done manually; build configuration invisible in results |
+| Runner | launch settings applied by hand and recorded nowhere; GPU sync and JIT warmup done manually; build configuration invisible in results |
 | Workbench | local comparisons that cannot describe themselves; baselines rebuilt for every question; results printed and lost; stale-binary comparisons going unnoticed; no path from local finding to project history |
 | Scheduler | hours-long queues with no visibility; benchmark requests learned by word of mouth; culprit-narrowing by manual re-runs; no `/perf`-style trigger |
 | Comparator | flat 5% thresholds on 0.2%-noise benchmarks; wrong baselines; local and CI verdicts that disagree; incomparable results compared silently |
