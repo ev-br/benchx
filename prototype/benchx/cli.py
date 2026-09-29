@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 
 from . import compare as compare_mod
-from . import runner
+from . import runner, session
 from .store import Store
 
 
@@ -82,7 +82,51 @@ def cmd_head(args):
     return 0
 
 
+class UsageError(Exception):
+    """The arguments do not select a mode, or mix the two."""
+
+
+# Flags that belong to one mode of `bx compare` (prototype-design.md §1).
+_MEASURE_ONLY = ("suite", "filter", "quantity", "rounds", "repetitions", "min_time", "project", "run_key",
+                 "out", "source_uri")
+_READ_ONLY = ("baseline", "results")
+
+
+def _flags(args, names):
+    return [f"--{n.replace('_', '-')}" for n in names if getattr(args, n) not in (None, [], False)]
+
+
+def _mode(args) -> str:
+    if args.targets and args.run:
+        raise UsageError("give two targets or --run, not both")
+    if not args.targets and not args.run:
+        raise UsageError("give two targets (measure mode) or --run KEY (read mode)")
+    if args.targets:
+        if len(args.targets) != 2:
+            raise UsageError("measure mode takes exactly two targets: BASELINE CONTENDER")
+        if wrong := _flags(args, _READ_ONLY):
+            raise UsageError(f"{', '.join(wrong)} belongs to read mode (--run)")
+        for need in ("suite", "rounds"):
+            if getattr(args, need) is None:
+                raise UsageError(f"measure mode needs --{need}")
+        return "measure"
+    if wrong := _flags(args, _MEASURE_ONLY):
+        raise UsageError(f"{', '.join(wrong)} belongs to measure mode (two targets)")
+    if not args.baseline:
+        raise UsageError("read mode needs --baseline")
+    return "read"
+
+
 def cmd_compare(args):
+    try:
+        mode = _mode(args)
+    except UsageError as e:
+        print(f"bx compare: error: {e}", file=sys.stderr)
+        return 2
+    return _measure(args) if mode == "measure" else _read(args)
+
+
+def _read(args):
     if args.results:
         with tempfile.TemporaryDirectory() as tmp:  # the ad hoc path: a throwaway store
             store = Store(Path(tmp) / "store.parquet")
@@ -91,6 +135,28 @@ def cmd_compare(args):
                 return _report(outcome)
             return _compare(store, args)
     return _compare(Store(), args)
+
+
+def _measure(args):
+    """The workbench's session loop: run both sides, deliver, compare."""
+    store = Store()
+    print(f"{store.path}", file=sys.stderr)  # stderr, so --json output stays clean
+    try:
+        label = session.parse_label(args.label) if args.label else None
+        doc = session.compare_targets(
+            *args.targets, profile=args.profile, suite=args.suite, rounds=args.rounds, store=store,
+            filter=args.filter, quantity=args.quantity or "wall-time", repetitions=args.repetitions or 5,
+            min_time=args.min_time, project=args.project, label=label, run_key=args.run_key, out=args.out,
+            source_uri=args.source_uri, k=args.k, min_rounds=args.min_rounds,
+            progress=lambda message: print(message, file=sys.stderr))
+    except runner.Refused as e:
+        print(f"refused: {e}", file=sys.stderr)
+        return 2
+    except (session.SessionError, compare_mod.CompareError) as e:
+        print(f"cannot compare: {e}", file=sys.stderr)
+        return 2
+    print(json.dumps(doc, indent=1) if args.json else compare_mod.render(doc))
+    return 0
 
 
 def _compare(store, args):
@@ -134,17 +200,34 @@ def main(argv=None):
     p.add_argument("--json", action="store_true", help="print the stored documents instead")
     p.set_defaults(fn=cmd_head)
 
-    p = sub.add_parser("compare", help="run-mode comparison of two sides of one run")
-    p.add_argument("--run", required=True, help="run key")
+    p = sub.add_parser("compare", help="compare two sides: read mode (--run) or measure mode (two targets)",
+                       description="Read mode compares results already measured: --run KEY --baseline VALUE. "
+                                   "Measure mode runs two prepared build directories, alternating them over "
+                                   "--rounds rounds, delivers the results to the local store, then compares: "
+                                   "BASELINE CONTENDER --suite NAME --rounds R, each target BUILD_DIR[:SOURCE_DIR].")
+    p.add_argument("targets", nargs="*", metavar="TARGET", help="measure mode: BASELINE CONTENDER")
     p.add_argument("--profile", required=True, choices=["revisions", "environments"])
-    p.add_argument("--baseline", required=True,
-                   help="revisions: a revision or tree id prefix; environments: the label value")
-    p.add_argument("--label", help="environments: the label that names the sides (required)")
-    p.add_argument("--results", nargs="+",
-                   help="compare these result directories through a throwaway store, not the local one")
     p.add_argument("--k", type=float, default=3.0)
     p.add_argument("--min-rounds", type=int, default=3)
     p.add_argument("--json", action="store_true")
+    p.add_argument("--label", help="read mode: the label that names the sides (environments); "
+                                   "measure mode: NAME=BASE,CONTENDER")
+    read = p.add_argument_group("read mode")
+    read.add_argument("--run", help="run key")
+    read.add_argument("--baseline", help="revisions: a revision or tree id prefix; environments: the label value")
+    read.add_argument("--results", nargs="+",
+                      help="compare these result directories through a throwaway store, not the local one")
+    measure = p.add_argument_group("measure mode")
+    measure.add_argument("--suite", help="the benchmark binary in each build directory")
+    measure.add_argument("--filter", help="a Google Benchmark filter regex")
+    measure.add_argument("--quantity", help="wall-time (default) or cpu-time")
+    measure.add_argument("--rounds", type=int, help="alternation rounds; each runs both sides once")
+    measure.add_argument("--repetitions", type=int, help="repetitions per case (default 5)")
+    measure.add_argument("--min-time", type=float, help="minimum sample seconds (harness default if omitted)")
+    measure.add_argument("--project", help="name a project, so the results join its series; omit for an ad hoc run")
+    measure.add_argument("--run-key", help="default: compare-<UTC timestamp>")
+    measure.add_argument("--out", help="directory for orders and result files (default ./results/RUN_KEY)")
+    measure.add_argument("--source-uri", help="the source's URI when the sides' checkouts do not share one")
     p.set_defaults(fn=cmd_compare)
 
     args = ap.parse_args(argv)
