@@ -135,8 +135,10 @@ event, not a silent change.
   same mapping without a runner.
 - **Not the comparator:** emits results, never verdicts.
 - **Not a builder:** runs targets it is given; checking out, configuring,
-  compiling, installing, and caching builds belong to the caller (`spin`,
-  `archery`, CMake, a CI script) or to the scheduler.
+  compiling, installing, and caching builds belong to the project's target
+  provider (`spin`, `archery`, CMake, a CI script), which the orchestrator (the
+  workbench, a CI job, or the scheduler) calls before it issues the order
+  (`system-decomposition.md` §3.4).
 - **Not a provisioner:** runs on machines it is given; fleet membership,
   machine lifecycle, and machine tuning (governor, boost, SMT, clock locks)
   belong to operations and the scheduler. It verifies and records that state;

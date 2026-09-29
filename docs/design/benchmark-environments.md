@@ -40,7 +40,7 @@ The rest of the document has three parts. §2 and §3 are normative: the boundar
 
 benchx has no notion of a revision to check out and build, no build cache, no privileged helper that changes machine state (governor, boost, SMT, clock locks), no sandboxing of untrusted code, and no restore-after-run. A work order never names a revision to build, only a target that already exists. The tools that already do these things well keep doing them, and call benchx last.
 
-This moves some current behavior out of benchx's scope rather than dropping it. `archery benchmark diff WORKSPACE <tag>` clones and builds a revision itself (Arrow local story); in this design that build stays in `archery`, or `spin`, or a CI script, and benchx is handed the two resulting build directories. What benchx adds is that the two directories now describe themselves in the results, which is the pain that story actually reports.
+This moves some current behavior out of benchx's scope rather than dropping it. `archery benchmark diff WORKSPACE <tag>` clones and builds a revision itself (Arrow local story); in this design that build stays in `archery`, or `spin`, or a CI script, called as the project's target provider by the workbench or CI job (`system-decomposition.md` §3.4), and benchx is handed the two resulting build directories. What benchx adds is that the two directories now describe themselves in the results, which is the pain that story actually reports.
 
 Enforcement is not ruled out; it is limited to the launched process. The runner enforces thread caps, affinity, device selection, and accelerator synchronization discipline on the process it starts, and verifies that the node can satisfy what the order requests. Conditions that would need privileged, persistent changes to the machine are `verify` or `record` rules only.
 
@@ -239,13 +239,13 @@ This document removes building from the runner and limits enforcement to the pro
 - **`harness-adapter.md` §3 and §5:** the context-document table's "the runner's environment policy" stands. The driving half still applies nothing to the environment itself and passes it through; enforcement of launch settings is the runner's, around any adapter.
 - **`benchmark-result-schema.md` §4.2:** "the job of the runner or adapter that prepares the environment" becomes "the job of whoever prepares the environment; the runner or adapter records the facts".
 - **`prototype-scope.md`:** building revisions moves to *out of scope*. Environment policy enforcement stays *deferred*.
-- **UC-03:** the two revisions are built by the caller (`spin`, a CI script); benchx receives two prepared targets, which makes UC-03's setup the same shape as UC-04's.
+- **UC-03:** the two revisions are built by the project's target provider (`spin`, a CI script), called by the workbench or CI job; benchx receives two prepared targets, which makes UC-03's setup the same shape as UC-04's. `spin bench` without `--compare` (UC-01) is one prepared target, in the current environment, and may be dirty.
 
 ## 9. Open questions
 
 1. How is the source of a fact (§3.4) represented in the message: a marker per field, or one provenance map from field path to `declared`, `detected`, or a plugin name?
 2. Recording a realized value as the intended one lets an accidental setting, such as a leftover `OMP_NUM_THREADS`, enter comparison context and start a new series. That is visible, which is the point, but noisy. Should undeclared settings stay in observed context until a project's policy promotes them?
-3. Which harnesses can interleave sides on their own, and what do UC-02 and UC-03 look like on one that cannot? For UC-04 the loop is necessarily the caller's.
+3. Which harnesses can interleave sides on their own, and what do UC-02 and UC-03 look like on one that cannot? For UC-04 the loop is necessarily the caller's; for UC-03 it is the workbench's session loop (`system-decomposition.md` §3.4).
 4. Where do declarations live: in the work order, in a per-project configuration file, in a per-node file an operator maintains, or all three with a defined precedence?
 5. Is the default allowlist of environment variables (§3.1) part of the core, or does each adapter contribute the variables its ecosystem cares about?
 6. Should the zero-configuration snapshot be available as a stand-alone command, so an operator can see what benchx would record about a machine before running anything on it?
