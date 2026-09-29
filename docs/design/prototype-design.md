@@ -356,8 +356,8 @@ history grow from run to run, and the demo ends with `bx head`.
 
 ## 7. Deliberate simplifications
 
-- One harness, one target kind, no builds, no environment policy: the user
-  prepares both sides (`benchmark-environments.md` §2).
+- One harness, one target kind, no environment policy, and no builds ever: the
+  user prepares both sides (`benchmark-environments.md` §2).
 - Environment identity is the snapshot's host name, CPU model, and core
   count; continuity events, quarantine, and artifact storage are absent.
 - One identity policy and one derived estimator, fixed in code.

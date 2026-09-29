@@ -11,7 +11,9 @@
 
 A contributor wants to benchmark two revisions in a fixed environment and
 compare the results to check if performance improved or there is a regression.
-This can be run locally or in CI.
+This can be run locally or in CI. The caller builds both revisions (for example
+with `spin` or a CI script) and hands benchx two prepared targets; benchx does
+not check out or build revisions, so the setup has the same shape as UC-04.
 
 ### 2. Motivation
 

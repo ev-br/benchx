@@ -40,7 +40,7 @@ one run:
 
 | Component | In prototype | Deferred | Out of scope |
 |---|---|---|---|
-| Runner | execute a `build_dir` target per a work order; capture the zero-configuration snapshot, the build configuration, and source identity; account for planned cases | `python_env` targets, context collectors beyond the built-in ones | building revisions, environment policy, tuning, refusing a run on environment state (`benchmark-environments.md` §2.3) |
+| Runner | execute a `build_dir` target per a work order; capture the zero-configuration snapshot, the build configuration, and source identity; account for planned cases | `python_env` targets, context collectors beyond the built-in ones, environment policy (enforcing launch settings, verifying requested hardware, refusing an unsatisfiable run) | building revisions, tuning the machine (`benchmark-environments.md` §2.3) |
 | Adapter | Google Benchmark, both halves: drive filter and repetitions, translate output | all other harnesses | — |
 | Store | one Parquet file; ingest per schema §5.4 (validated and durable, auto-create, unit-conflict rejection, idempotency, attempt integrity); one default identity policy; queries: list series, series history, get result | continuity events, quarantine, artifact storage, identity-policy authoring | — |
 | Comparator | run mode with the `revisions` and `environments` profiles; eligibility guard; comparison document | history mode; `single-run`, `variants`, and `cross-machine` profiles; batch requests; provisional noise rules | — |
