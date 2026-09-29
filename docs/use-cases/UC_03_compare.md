@@ -156,9 +156,10 @@ possible ensures reliability.
 - Missing data: if the process is stopped before all interleaved runs are complete,
   the series cannot claim the profile.
 - Reject dirty trees - the comparison is invalid if there is no way to validate either
-  revision. The schema should make `dirty` non-nullable in this profile. The
-  comparison's environment policy carries a `tree.clean` verify rule with
-  `refuse`. This applies to comparisons only: a single-revision run (UC-01)
+  revision. The schema should make `dirty` non-nullable in this profile: the
+  `revisions` profile's `clean-tree` invariant fails a dirty or unknown side.
+  The comparison's environment policy carries a `tree.clean` verify rule with
+  `refuse`, so the run is refused before any measurement. This applies to comparisons only: a single-revision run (UC-01)
   may be dirty and is recorded as dirty.
 - Build failure of either revision happens in the target provider, before any
   work order exists, and is reported to the caller; there is no result to

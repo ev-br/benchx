@@ -121,9 +121,10 @@ harness did not report.
   comparison target, so expensive baselines are measured once. A replayed
   baseline suits unpaired comparisons; a paired, interleaved comparison
   (UC-03) needs both sides measured fresh in one session.
-- Allows a single-revision run on a dirty tree, recorded as dirty; a
-  two-revision comparison refuses a dirty tree (UC-03), by a `tree.clean`
-  verify rule in the comparison's environment policy.
+- Allows a single-revision run on a dirty tree, recorded as dirty (UC-01); a
+  two-revision comparison refuses a dirty tree (UC-03 §10), before running, by a
+  `tree.clean` verify rule where an environment policy applies, and again in
+  the comparator by the `revisions` profile's `clean-tree` invariant.
 - Refuses, or loudly warns about, invalid comparisons: different machine,
   different build configuration, unknown provenance.
 - Supports the iteration loop: scoping by filter, quick low-precision runs
