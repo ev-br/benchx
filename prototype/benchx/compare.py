@@ -119,6 +119,13 @@ def compare(documents, *, run_key, profile, baseline, label=None, k=3.0, min_rou
         if by_side[base] == by_side[contender]:
             doc["failed_invariants"].append({"invariant": "sides-differ",
                                              "detail": "the labeled sides report the same subject"})
+    if profile == "revisions":
+        # UC-03 §10: a dirty or unknown tree cannot be validated (schema §5.5).
+        unclean = sorted({s for d, s in zip(documents, sides)
+                          if any(d["provenance"].get(f) != "clean" for f in ("subject_dirty", "benchmark_dirty"))})
+        if unclean:
+            doc["failed_invariants"].append({"invariant": "clean-tree",
+                                             "detail": f"sides with a dirty or unknown tree: {unclean}"})
     slots = {}
     for d, s in zip(documents, sides):
         slot = d.get("procedure", {}).get("slot")

@@ -20,6 +20,16 @@ class Refused(Exception):
     """The order cannot be carried out as written; nothing was run."""
 
 
+# Order fields whose feature the prototype does not implement. Ignoring one
+# would run the order without what it asked for, so the runner refuses it.
+DEFERRED = {
+    "environment_policy": "enforcing launch settings and verifying requested hardware",
+    "build": "a declared build configuration (the runner reads CMakeCache.txt)",
+    "components": "pinned components",
+    "schedule": "side scheduling (the session loop alternates the sides)",
+}
+
+
 def _timestamp(epoch: float) -> str:
     return datetime.fromtimestamp(epoch, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
@@ -70,6 +80,9 @@ def check(order: dict) -> None:
     unknown = set(order["quantities"]) - set(gbench.QUANTITIES)
     if unknown:
         raise Refused(f"quantities not supported: {sorted(unknown)}")
+    for field, what in DEFERRED.items():
+        if field in order:
+            raise Refused(f"{field} is deferred in the prototype: {what}")
     try:
         gbench.protocol(order["precision"])
     except gbench.Unsupported as e:
