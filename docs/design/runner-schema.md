@@ -1,6 +1,6 @@
 # Runner Schemas: Work Order, Environment Policy, Run Context
 
-**Status:** Draft for review. **Authoritative** over `benchmark-environments.md` §2.2 principle 2, §2.3, and the runner-related items in §8's "Consequences for other design documents", and over the unmerged work-order proposal in PR #35, where they conflict: this document's environment-policy model (enforce/verify/refuse, §4) and buildable target kinds (§3.1) stand as designed. The contradiction is not otherwise reconciled in either document as of this writing; see `benchmark-environments.md` §8 for the disputed text.
+**Status:** Draft for review. **Authoritative** over `benchmark-environments.md` §2.2 principle 2, §2.3, and the runner-related items in §8's "Consequences for other design documents", and over the unmerged work-order proposal in `work-order.md`, where they conflict: this document's environment-policy model (enforce/verify/refuse, §4) and buildable target kinds (§3.1) stand as designed. The contradiction is not otherwise reconciled in either document as of this writing; see `benchmark-environments.md` §8 for the disputed text.
 
 **Companion to:** `runner.md` (PR #24), `benchmark-result-schema.md`
 
