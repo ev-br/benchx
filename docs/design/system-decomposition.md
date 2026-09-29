@@ -112,8 +112,18 @@ harness did not report.
 - Runs and compares benchmarks on the developer's own machine, entirely
   offline: current workspace against a baseline build, one build configuration
   against another at the same commit, a checkout against a release tag.
+- Obtains targets through the project's **target provider** (below) and drives
+  the session loop for a comparison: one work order per side per round,
+  alternating the sides, then the comparator. The runner takes one order per
+  invocation, and two builds are two invocations, so this loop is the
+  workbench's, not the harness's and not the runner's.
 - Saves any run as a self-describing result file and replays it later as a
-  comparison target, so expensive baselines are measured once.
+  comparison target, so expensive baselines are measured once. A replayed
+  baseline suits unpaired comparisons; a paired, interleaved comparison
+  (UC-03) needs both sides measured fresh in one session.
+- Allows a single-revision run on a dirty tree, recorded as dirty; a
+  two-revision comparison refuses a dirty tree (UC-03), by a `tree.clean`
+  verify rule in the comparison's environment policy.
 - Refuses, or loudly warns about, invalid comparisons: different machine,
   different build configuration, unknown provenance.
 - Supports the iteration loop: scoping by filter, quick low-precision runs
@@ -121,8 +131,24 @@ harness did not report.
 - Can promote a kept local result into the result store unchanged — the local
   file and the stored result are the same schema object.
 
-**Does not:** require a server, an account, or any part of the fleet.
-It is the runner plus comparator wrapped for human, interactive use.
+**Does not:** require a server, an account, or any part of the fleet, or
+build anything itself.
+It is the runner plus comparator wrapped for human, interactive use, plus the
+session loop and the call to a target provider.
+
+**Target provider (extension point, not a component).** The runner never
+builds, so something must turn a source ref such as `main` into a prepared
+target before any work order exists. That is the project's own tool: `spin`
+for NumPy, `archery` or CMake for Arrow. A provider takes a source ref and a
+build configuration and returns a work-order `target` (`build`,
+`working_tree`, or `artifact`) with an optional declared `build`; it owns
+checkout, configuration, compilation, and caching by commit and configuration.
+Orchestrators call it: the workbench locally, a CI job or the scheduler on a
+fleet. Providers are a per-project catalog like the harness adapters, and they
+build before measurement starts, never on the benchmark cores during it. A
+failed build happens before any work order exists, so it is reported to the
+caller by the orchestrator, not as a runner result; the runner's "every
+outcome is a result" principle covers only orders it was given.
 
 ### 3.5 Scheduler
 
@@ -139,6 +165,10 @@ It is the runner plus comparator wrapped for human, interactive use.
   who asked for benchmarks can see where their request stands.
 
 **Does not:** interpret results. Its output is runs, not verdicts.
+
+When a request needs a revision that is not yet built, the scheduler (or CI
+job) obtains the target through the project's target provider (§3.4) before it
+issues the work order; it does not ask the runner to build.
 
 **Optional.** A deployment is complete without a scheduler: any person, CI
 job, or script may author work orders directly. The scheduler exists for
@@ -265,8 +295,16 @@ Not components of this system:
 2. *Resolved:* the store records identity; the comparator enforces
    comparability (see `comparator.md` §3).
 3. Is the workbench a distinct deliverable or a thin skin over runner +
-   comparator? Treated here as a skin with its own UX obligations.
-4. How thin can the minimum viable deployment be? Partially answered: the
+   comparator? Treated here as a skin with its own UX obligations, plus the
+   session loop and target-provider calls of §3.4.
+4. Dirty trees in comparisons. UC-03 rejects them; a single-revision run
+   accepts them. Should `--compare` also allow a dirty tree as a local-only
+   comparison, keyed on working-tree ids (`benchmark-result-schema.md` §5.5),
+   so a contributor can compare uncommitted work without committing first?
+5. What is the target-provider contract in detail: its input, how it reports a
+   build failure, how it names and expires cached builds, and whether a
+   provider may return an artifact whose revision the runner cannot inspect?
+6. How thin can the minimum viable deployment be? Partially answered: the
    scheduler is optional, and runner + adapter + result files form a complete
    producing deployment; the open part is the minimum consuming side.
 
