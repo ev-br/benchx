@@ -37,6 +37,9 @@ Optional hooks (the runner calls them when present)
                               (None drops one), warnings go to `quality.warnings`.
                               For an adapter that can see the environment its
                               harness actually had.
+    repetition_levels(applied, run, case) -> `procedure.repetition_levels`: per level,
+                              `{unit, attempted, completed}` as totals over the
+                              attempt. For a harness that repeats at several levels.
 """
 
 

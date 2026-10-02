@@ -240,6 +240,21 @@ def attempted(applied: dict) -> int:
     return n
 
 
+def repetition_levels(applied: dict, run: dict, case: str) -> list[dict]:
+    """Planned and realized counts per repetition level, outermost first. Counts
+    are totals over the attempt: a level's attempted is the product of the
+    requested levels down to it, so 20 processes of 3 values attempts 20 and 60.
+    A process is completed when it produced values; calibration runs are neither."""
+    benchmark = _benchmark(run["native"], case)
+    measured = [r for r, _ in _runs(run["native"], benchmark) if r.get("values")] if benchmark else []
+    realized = {"process": len(measured), "value": sum(len(r["values"]) for r in measured)}
+    levels, planned = [], 1
+    for level in applied["repetitions"]["levels"]:
+        planned *= level["n"]
+        levels.append({"unit": level["unit"], "attempted": planned, "completed": realized[level["unit"]]})
+    return levels
+
+
 def harness(info: dict) -> dict:
     out = {"name": NAME}
     if info.get("library_version"):

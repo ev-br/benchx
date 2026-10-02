@@ -627,6 +627,7 @@ Comparison context and procedure are open objects (§4.2). These keys are recomm
 | `configuration.execution_mode` | subject descriptor | JIT versus ahead-of-time execution of the subject | `jit`, `aot` |
 | `inner_iterations` | procedure | Inner iterations actually used per observation | `100` |
 | `attempted_repetitions`, `completed_repetitions` | procedure | Observations requested and obtained | `5`, `5` |
+| `repetition_levels` | procedure | Per level, outermost first, repetitions requested and obtained, as totals over the attempt. For harnesses that repeat at several levels | `[{"unit": "process", "attempted": 20, "completed": 18}, {"unit": "value", "attempted": 60, "completed": 54}]` |
 | `warmups_performed` | procedure | Warmup repetitions actually run | `1` |
 | `caches_cleared` | procedure | Caches actually dropped, in order | `["filesystem"]`, `["filesystem", "cuda-jit"]` |
 | `slot` | procedure | Position of this attempt in the run's realized order across all sides, zero-based | `0`, `3` |
@@ -634,6 +635,6 @@ Comparison context and procedure are open objects (§4.2). These keys are recomm
 | `duration_seconds` | procedure | Wall time spent on the attempt including warmup | `2.31` |
 | `timeout_seconds` | procedure | Limit the attempt ran under, as ordered; an attempt stopped by it is `error` with reason `timeout` | `1800` |
 
-`attempted_repetitions` and `completed_repetitions` are single counts, so a multi-level request has no realized counterpart yet: twenty processes planned and eighteen completed, each of three values, cannot be stated. Until the procedure keys grow a per-level form, such a producer records the totals and keeps the per-level detail in `provenance.info`.
+`attempted_repetitions` and `completed_repetitions` are the totals at the innermost level. A harness that repeats at several levels also reports `procedure.repetition_levels`, outermost first, each `{unit, attempted, completed}` as totals over the attempt: twenty processes of three values attempted 20 processes and 60 values, and if two processes died the report is `process` 20 attempted and 18 completed, `value` 60 and 54. This keeps a lost process distinguishable from dropped values. Completed never exceeds attempted at any level.
 
 A `pedantic` harness mode is `calibration.mode: fixed` plus `repetitions.mode: fixed`; an `adaptive` mode is `calibration.mode: adaptive` with the minimum sample duration it enforces. Changing any `protocol` value creates a new series under the default identity policy; changing a `procedure` value never does.
