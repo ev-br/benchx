@@ -71,8 +71,8 @@ def check(order: dict) -> None:
     adapter = adapters.get(suite["adapter"])
     if adapter is None:
         raise Refused(f"no adapter for {suite['adapter']!r}")
-    if order["target"]["kind"] != "build":
-        raise Refused(f"only build targets are supported; {order['target']['kind']!r} is deferred")
+    if order["target"]["kind"] not in ("build", "working_tree"):
+        raise Refused(f"only build and working_tree targets are supported; {order['target']['kind']!r} is deferred")
     if "benchmark" in order:
         raise Refused("only benchmarks in the subject's own checkout are supported")
     if "include" in suite or "exclude" in suite:
@@ -101,13 +101,20 @@ def run(order_path, out_dir) -> dict:
     adapter = adapters.get(order["suites"][0]["adapter"])
     applied_protocol, invocation = adapter.protocol(order["precision"])
 
-    build_dir = Path(order["target"]["path"])
+    target_path = Path(order["target"]["path"]).expanduser()
     try:
-        runnable = adapter.locate(build_dir, order["suites"][0]["suite"])
+        runnable = adapter.locate(target_path, order["suites"][0]["suite"])
     except Unsupported as e:
         raise Refused(str(e)) from None
-    source_dir = order["target"].get("source_dir") or snapshot.cmake_source_dir(build_dir)
-    source = snapshot.git_identity(source_dir) if source_dir else None
+    if order["target"]["kind"] == "working_tree":
+        # The tree is the code: inspect it as found, dirty or not, never clean or check it out.
+        source_dir = order["target"].get("source_dir") or target_path
+        source = snapshot.git_identity(source_dir) or snapshot.directory_identity(source_dir)
+        configuration = {}
+    else:
+        source_dir = order["target"].get("source_dir") or snapshot.cmake_source_dir(target_path)
+        source = snapshot.git_identity(source_dir) if source_dir else None
+        configuration = snapshot.cmake_configuration(target_path)
     if source is None:
         # runner.md §2: a result that cannot state its revision is a defect.
         raise Refused("cannot locate the checkout the target was built from; set target.source_dir")
@@ -116,7 +123,6 @@ def run(order_path, out_dir) -> dict:
     parameters = dict(order.get("environment_variables", {}))
     environment = snapshot.environment()
     observed = snapshot.observed_context(child_env)
-    configuration = snapshot.cmake_configuration(build_dir)
     # Declared by the user, recorded as given, never executed or checked (runner-schema.md §3.1).
     declared_text = target_mod.text(order["target"])
     if "provider" in declared_text:
