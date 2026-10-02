@@ -72,7 +72,7 @@ def protocol(precision: dict) -> tuple[dict, list[str]]:
     return applied, flags
 
 
-def locate(target_path, suite) -> Path:
+def locate(target_path, suite, env) -> Path:
     """The benchmark binary: the suite's name inside the target's build directory."""
     binary = Path(target_path) / suite
     if not (binary.is_file() and os.access(binary, os.X_OK)):

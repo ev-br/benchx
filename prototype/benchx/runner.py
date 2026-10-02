@@ -102,8 +102,9 @@ def run(order_path, out_dir) -> dict:
     applied_protocol, invocation = adapter.protocol(order["precision"])
 
     target_path = Path(order["target"]["path"]).expanduser()
+    child_env = {**os.environ, **order.get("environment_variables", {})}
     try:
-        runnable = adapter.locate(target_path, order["suites"][0]["suite"])
+        runnable = adapter.locate(target_path, order["suites"][0]["suite"], child_env)
     except Unsupported as e:
         raise Refused(str(e)) from None
     if order["target"]["kind"] == "working_tree":
@@ -119,7 +120,6 @@ def run(order_path, out_dir) -> dict:
         # runner.md §2: a result that cannot state its revision is a defect.
         raise Refused("cannot locate the checkout the target was built from; set target.source_dir")
 
-    child_env = {**os.environ, **order.get("environment_variables", {})}
     parameters = dict(order.get("environment_variables", {}))
     environment = snapshot.environment()
     observed = snapshot.observed_context(child_env)
@@ -140,7 +140,10 @@ def run(order_path, out_dir) -> dict:
     order_file.write_bytes(core.canonical(order))
 
     attempted = adapter.attempted(applied_protocol)
-    cases = adapter.list_cases(runnable, order["suites"][0].get("filter"), child_env)
+    try:
+        cases = adapter.list_cases(runnable, order["suites"][0].get("filter"), child_env)
+    except Unsupported as e:
+        raise Refused(str(e)) from None
     written = []
     for index, case in enumerate(cases):
         stem = f"{index:04d}"
@@ -152,7 +155,12 @@ def run(order_path, out_dir) -> dict:
                      _artifact("stderr", "text/plain", artifacts_dir / f"{stem}.stderr")]
         if native_path.exists():
             artifacts.insert(0, _artifact("native-output", "application/json", native_path))
+        artifacts += [_artifact(kind, media_type, path) for kind, media_type, path in run_.get("artifacts", [])]
         native_observed, native_info = adapter.context_facts(run_["native"])
+        case_observed, case_warnings = observed, []
+        if hasattr(adapter, "observed_environment"):
+            facts, case_warnings = adapter.observed_environment(run_, case, snapshot.env_allowlist)
+            case_observed = {k: v for k, v in {**observed, **facts}.items() if v is not None}
         attempt_key = f"urn:benchx:attempt:{ref[7:23]}:{index}"
 
         for output in adapter.translate(case, order["quantities"], run_, attempted):
@@ -203,16 +211,19 @@ def run(order_path, out_dir) -> dict:
                     "workload": workload,
                     "subject": subject,
                     "quantity": output["quantity"],
-                    "comparison_context": {"harness": harness, "protocol": applied_protocol},
+                    "comparison_context": {"harness": harness, "protocol": applied_protocol,
+                                           **(adapter.comparison_extras(native_info)
+                                              if hasattr(adapter, "comparison_extras") else {})},
                     "environment": environment,
                 },
                 "measurement": output["measurement"],
-                "observed_context": {**observed, **({adapter.CONTEXT_KEY: native_observed} if native_observed else {})},
+                "observed_context": {**case_observed, **({adapter.CONTEXT_KEY: native_observed} if native_observed else {})},
                 "procedure": procedure,
                 "provenance": provenance,
             }
-            if setup_warning:
-                document["quality"] = {"warnings": [setup_warning]}
+            warnings = ([setup_warning] if setup_warning else []) + case_warnings
+            if warnings:
+                document["quality"] = {"warnings": warnings}
             try:
                 core.validate_result(document)
             except core.DocumentError as e:
