@@ -14,10 +14,14 @@ Identity and capabilities
 Driving half (harness-adapter.md §5)
     protocol(precision)       -> (applied protocol, invocation): the full protocol
                               that will apply, and what the harness is given to apply it
-    locate(target_path, suite) -> the thing to run; raises Unsupported if absent
+    locate(target_path, suite, env) -> the thing to run; raises Unsupported if absent
+                              or unusable in `env`, the environment it would run in
     list_cases(runnable, case_filter, env) -> the planned cases, fixed before running
     run_case(runnable, case, invocation, env, timeout, native_path) -> the run record;
-                              never raises for harness failures, which become results
+                              never raises for harness failures, which become results.
+                              The record may carry `artifacts`, a list of
+                              (kind, media_type, path) the runner records beside
+                              stdout, stderr and the native file
 
 Translating half (harness-adapter.md §6)
     attempted(applied)        -> the repetitions the protocol asked for, the denominator
@@ -25,6 +29,14 @@ Translating half (harness-adapter.md §6)
     translate(case, quantities, run, attempted) -> one output per quantity
     context_facts(native)     -> (observed context, provenance info) from native output
     harness(info)             -> the `comparison_context.harness` object
+
+Optional hooks (the runner calls them when present)
+    comparison_extras(info)   -> more `comparison_context` keys, such as host runtime
+    observed_environment(run, case, env_allowlist) -> (facts, warnings): facts
+                              replace the runner's own `observed_context` keys
+                              (None drops one), warnings go to `quality.warnings`.
+                              For an adapter that can see the environment its
+                              harness actually had.
 """
 
 
