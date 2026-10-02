@@ -360,3 +360,10 @@ def observed_environment(run: dict, case: str, env_allowlist) -> tuple[dict, lis
         if captured is None:
             warnings.append("env-capture-missing")
     return facts, warnings
+
+
+def default_precision() -> dict:
+    """pyperf's own defaults, spelled as a work-order `precision`."""
+    return {"repetitions": {"mode": "fixed", "levels": [{"unit": "process", "n": DEFAULTS["processes"]},
+                                                       {"unit": "value", "n": DEFAULTS["values"]}]},
+            "calibration": dict(DEFAULTS["calibration"]), "warmup": dict(DEFAULTS["warmup"])}
