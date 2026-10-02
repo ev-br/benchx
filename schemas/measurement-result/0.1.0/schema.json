@@ -57,10 +57,10 @@
       "$ref": "#/$defs/revisionRef"
     },
     "benchmark": {
-      "description": "Exact code that defined and executed the workload. A reported coordinate that policy normally maps to a declared benchmark version. Optional only for thin local results with no benchmark repository.",
+      "description": "Exact code that defined and executed the workload. A reported coordinate that policy normally maps to a declared benchmark version. Optional only for thin local results with no benchmark repository. The revision may be omitted when the benchmark code has no version control; provenance.benchmark_tree then identifies it and benchmark_dirty is dirty.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["source", "revision"],
+      "required": ["source"],
       "properties": {
         "source": { "$ref": "#/$defs/sourceRef" },
         "revision": { "$ref": "#/$defs/revisionRef" }
@@ -267,6 +267,11 @@
           "type": "integer",
           "minimum": 0
         },
+        "timeout_seconds": {
+          "description": "Limit the run author imposed on the attempt, recorded whether or not it fired. An attempt stopped by it is error with reason timeout, not censored.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
         "round": {
           "description": "Position of this attempt in an interleaved run, monotone per run and kept by a retry. Attempts with the same round number across sides of a comparison are paired.",
           "type": "integer",
@@ -410,6 +415,18 @@
         }
       },
       "then": { "properties": { "provenance": { "required": ["references"] } } }
+    },
+    {
+      "$comment": "A benchmark without a revision is identified by its tree alone, and an unversioned tree cannot be shown to be clean.",
+      "if": { "required": ["benchmark"], "properties": { "benchmark": { "not": { "required": ["revision"] } } } },
+      "then": {
+        "properties": {
+          "provenance": {
+            "required": ["benchmark_tree"],
+            "properties": { "benchmark_dirty": { "const": "dirty" } }
+          }
+        }
+      }
     }
   ],
   "$defs": {

@@ -206,7 +206,10 @@ def run(order_path, out_dir) -> dict:
                 **({"project": order["project"]} if "project" in order else {}),
                 "source": order["target"]["source"],
                 "revision": {"key": source["revision"]},
-                "benchmark": {"source": order["target"]["source"], "revision": {"key": source["revision"]}},
+                "benchmark": {"source": order["target"]["source"],
+                              # An unversioned tree is identified by its hash in provenance, not by a revision.
+                              **({} if source["revision"].startswith("directory-")
+                                 else {"revision": {"key": source["revision"]}})},
                 "coordinates": {
                     "workload": workload,
                     "subject": subject,

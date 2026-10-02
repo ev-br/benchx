@@ -69,6 +69,19 @@ def test_bench_command_runs_and_ingests(tree, capsys):
     assert levels(order["precision"]) == {"process": 2, "value": 2}
 
 
+def test_unversioned_benchmark_is_identified_by_its_tree(tree):
+    assert cli.main(["bench", "mod.py", "bench_a", "--run-key", "nogit", "--no-ingest", *FAST]) == 0
+    documents = [core.load(p) for p in (tree / "results" / "nogit").glob("*.json")
+                 if not p.name.startswith("workorder-")]
+    assert documents
+    for document in documents:
+        core.validate_result(document)
+        provenance = document["provenance"]
+        assert "revision" not in document["benchmark"]
+        assert provenance["benchmark_dirty"] == "dirty"
+        assert provenance["benchmark_tree"] == provenance["subject_tree"]
+
+
 def test_bench_without_names_runs_the_default_cases(tree, capsys):
     assert cli.main(["bench", "mod.py", "--run-key", "all", "--no-ingest", *FAST]) == 0
     out = capsys.readouterr().out
