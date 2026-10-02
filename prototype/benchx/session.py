@@ -7,8 +7,9 @@ work order per side and round, run them alternately, and hand the run to the
 comparator. That loop lives here, and the CLI, a CI script, or a front end such
 as `spin bench --compare` calls it.
 
-The session builds nothing. Both targets must already exist; whatever produced
-them plays the target-provider role.
+The session builds nothing itself. Both targets must exist when it looks; a
+target provider it calls may build them first (`prepare`), and plays the
+target-provider role.
 """
 
 import json
@@ -17,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import compare as compare_mod
-from . import runner, snapshot
+from . import runner, snapshot, target as target_mod
 
 PROFILES = ("revisions", "environments")
 CASE_TIMEOUT_S, ORDER_TIMEOUT_S = 60, 600
@@ -54,19 +55,43 @@ def _source_uri(source_dir: str) -> str:
     return Path(source_dir, common).resolve().parent.as_uri() if common else Path(source_dir).resolve().as_uri()
 
 
-def _side(target: str, suite: str) -> dict:
-    """Locate and identify one side before anything runs."""
-    build, source = parse_target(target)
+def _side(spec: str, suite: str, operation: str) -> dict:
+    """Locate and identify one side before anything runs.
+
+    `spec` is `@CONFIG[=SOURCE_REF]` (ask the provider to `operation`) or
+    `BUILD_DIR[:SOURCE_DIR]` (read the build directory's sidecar, if any).
+    """
+    try:
+        description = target_mod.resolve(spec, operation=operation)
+    except target_mod.TargetError as e:
+        raise SessionError(str(e)) from None
+    source = None
+    if description:
+        if description["target"]["kind"] != "build":
+            raise SessionError(f"{spec}: only build targets are supported; "
+                               f"{description['target']['kind']!r} is deferred")
+        if "build" in description:
+            raise SessionError(f"{spec}: a declared build is deferred in the prototype "
+                               "(the runner reads CMakeCache.txt)")
+        build = description["target"]["path"]
+        source = description["target"].get("source_dir")
+        uri = description["target"]["source"]["uri"]
+    else:
+        build, source = parse_target(spec)
+        uri = None
     build = Path(build).resolve()
     if not build.is_dir():
         raise SessionError(f"build directory not found: {build}")
     if not (build / suite).is_file():
         raise SessionError(f"suite binary not found: {build / suite}")
+    if ":" in spec and not spec.startswith("@"):
+        source = parse_target(spec)[1] or source
     source = source or snapshot.cmake_source_dir(build)
     identity = source and snapshot.git_identity(source)
     if not identity:
         raise SessionError(f"cannot locate the checkout {build} was built from; give BUILD_DIR:SOURCE_DIR")
-    return {"build": build, "source": identity["path"], "identity": identity}
+    return {"build": build, "source": identity["path"], "identity": identity, "uri": uri,
+            "text": target_mod.text(description), "labels": dict((description or {}).get("labels", {}))}
 
 
 def _order(side: dict, *, suite, filter, quantity, repetitions, min_time, project, run_key, source_uri,
@@ -83,7 +108,7 @@ def _order(side: dict, *, suite, filter, quantity, repetitions, min_time, projec
         "state": "resolved",
         "suites": [entry],
         "target": {"kind": "build", "path": str(side["build"]), "source_dir": side["source"],
-                   "source": {"uri": source_uri, "type": "git"}},
+                   "source": {"uri": source_uri, "type": "git"}, **side["text"]},
         "quantities": [quantity],
         "precision": precision,
         "timeouts": {"case_s": CASE_TIMEOUT_S, "order_s": ORDER_TIMEOUT_S},
@@ -95,6 +120,7 @@ def _order(side: dict, *, suite, filter, quantity, repetitions, min_time, projec
         "round": round_,
         "slot": slot,
     }
+    labels = {**side["labels"], **(labels or {})}
     if labels:
         order["labels"] = labels
     if project:
@@ -105,11 +131,13 @@ def _order(side: dict, *, suite, filter, quantity, repetitions, min_time, projec
 def compare_targets(baseline: str, contender: str, *, profile: str, suite: str, rounds: int, store,
                     filter=None, quantity="wall-time", repetitions=5, min_time=None, project=None,
                     label=None, run_key=None, out=None, source_uri=None, k=3.0, min_rounds=3,
-                    progress=None) -> dict:
+                    progress=None, build=True) -> dict:
     """Alternate baseline and contender over `rounds` rounds, deliver every
     result to `store`, and return the run-mode comparison document.
 
-    `baseline` and `contender` are `BUILD_DIR[:SOURCE_DIR]`. For `environments`,
+    `baseline` and `contender` are `BUILD_DIR[:SOURCE_DIR]` or `@CONFIG[=SOURCE_REF]`;
+    a provider is asked to `prepare` (it may build) unless `build` is false, when
+    it is only asked to `describe`. For `environments`,
     `label` is (name, baseline value, contender value). Raises SessionError when
     the session cannot start, and runner.Refused when the runner refuses an order.
     """
@@ -121,14 +149,15 @@ def compare_targets(baseline: str, contender: str, *, profile: str, suite: str, 
         raise SessionError("the environments profile needs --label NAME=BASE,CONTENDER")
     if profile == "revisions" and label is not None:
         raise SessionError("--label names the sides of an environments comparison; revisions are named by their trees")
-    sides = [_side(baseline, suite), _side(contender, suite)]
+    operation = "prepare" if build else "describe"
+    sides = [_side(baseline, suite, operation), _side(contender, suite, operation)]
     if profile == "revisions":
         # UC-03 §10: refuse before any measurement, not after R rounds.
         for name, side in zip(("baseline", "contender"), sides):
             if side["identity"]["dirty"] != "clean":
                 raise SessionError(f"{name} tree {side['source']} is {side['identity']['dirty']}; "
                                    "a revisions comparison needs clean trees (UC-03 §10)")
-    uris = {source_uri or _source_uri(side["source"]) for side in sides}
+    uris = {source_uri or side["uri"] or _source_uri(side["source"]) for side in sides}
     if len(uris) != 1:
         raise SessionError(f"the sides report different source URIs {sorted(uris)}; pass --source-uri")
     source_uri = uris.pop()

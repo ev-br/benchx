@@ -140,16 +140,71 @@ session loop and the call to a target provider.
 **Target provider (extension point, not a component).** The runner never
 builds, so something must turn a source ref such as `main` into a prepared
 target before any work order exists. That is the project's own tool: `spin`
-for NumPy, `archery` or CMake for Arrow. A provider takes a source ref and a
-build configuration and returns a work-order `target` (`build`,
-`working_tree`, or `artifact`) with an optional declared `build`; it owns
-checkout, configuration, compilation, and caching by commit and configuration.
+for NumPy, `archery` or CMake for Arrow, or a build script the user wrote.
 Orchestrators call it: the workbench locally, a CI job or the scheduler on a
 fleet. Providers are a per-project catalog like the harness adapters, and they
 build before measurement starts, never on the benchmark cores during it. A
 failed build happens before any work order exists, so it is reported to the
 caller by the orchestrator, not as a runner result; the runner's "every
 outcome is a result" principle covers only orders it was given.
+
+What a provider hands back is a **target description**
+(`schemas/target-description/0.1.0`): the work-order `target` (`build`,
+`working_tree`, or `artifact`), an optional declared `build`, and three
+optional pieces of user-owned text.
+
+- `how_built`: what the user did to build the target, such as the cmake
+  commands or the build script's name. Provenance only; it is never executed.
+  It is what turns two opaque build directories into "hardening on" and
+  "hardening off" in a result.
+- `activation`: what the user ran to enter the target's environment, such as
+  sourcing an activate script, loading modules, or exporting library paths.
+  Provenance only; it is never executed. The user activates the environment
+  before invoking benchx, and the runner records the process environment it
+  inherited (`benchmark-environments.md` §3.1) beside this declaration. The
+  two are kept as they are and never compared by the runner.
+- `shell`: the shell `activation` is written for, so a reader knows how to
+  read it. Never invoked.
+
+Absent, null, or empty `how_built` or `activation` means not declared. Neither
+text enters identity, and both are recorded verbatim in the work order and in
+each result, so neither may hold secrets. The
+description cannot set suites, precision, environment variables, an
+environment policy, quantities, or timeouts; those belong to the workbench and
+the user.
+
+The same document reaches the workbench by three routes:
+
+1. **A sidecar file**, `.benchx-target.json` in a build directory, written by
+   the user's own build script. It stays with a long-lived build directory
+   instead of with one invocation.
+2. **A provider command**, named in the project file `.benchx/provider.json`
+   as `{"command": [...]}`, which prints the description on stdout.
+3. **The workbench's own input**, when the user prepared everything by hand
+   and there is no provider.
+
+For a provider the contract is:
+
+- The workbench writes one request
+  (`schemas/target-provider-request/0.1.0`) to the provider's stdin: an
+  `operation`, a `source_ref` (a revision, the token `WORKSPACE`, or a path),
+  and an opaque project-defined `configuration` such as `hardened`.
+- One request is one target. A comparison is two independent requests.
+- `prepare` may build. It must be incremental and repeatable, finish before
+  any work order exists, and leave nothing running. `describe` changes
+  nothing: it reports a target that already exists, and exits nonzero when
+  there is none. The workbench uses it to describe long-lived build
+  directories without rebuilding them.
+- The description goes to stdout and nothing else does; progress and messages
+  go to stderr, which the workbench shows as it arrives.
+- Failure is a nonzero exit with the reason on stderr. The workbench stops and
+  names the side that failed. No order and no result exist.
+- The provider runs in the user's current environment as an ordinary child
+  process. That environment is not captured; what the runner will do is what
+  the description says.
+- All paths are absolute.
+- The workbench checks the description's shape. It does not check that
+  `how_built` or `activation` is true, and neither does the runner.
 
 ### 3.5 Scheduler
 
@@ -302,9 +357,13 @@ Not components of this system:
    accepts them. Should `--compare` also allow a dirty tree as a local-only
    comparison, keyed on working-tree ids (`benchmark-result-schema.md` §5.5),
    so a contributor can compare uncommitted work without committing first?
-5. What is the target-provider contract in detail: its input, how it reports a
-   build failure, how it names and expires cached builds, and whether a
-   provider may return an artifact whose revision the runner cannot inspect?
+5. *Partly resolved:* the target-provider contract is in §3.4: its input is
+   a request, its output a target description, a build failure is a nonzero
+   exit reported by the caller, and `describe` reports without building. Still
+   open: how cached builds are named and expired (a provider's own business
+   while the workbench is local), and whether a provider may return an
+   artifact whose revision the runner cannot inspect (deferred with UC-03 and
+   fleet use).
 6. How thin can the minimum viable deployment be? Partially answered: the
    scheduler is optional, and runner + adapter + result files form a complete
    producing deployment; the open part is the minimum consuming side.

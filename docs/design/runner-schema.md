@@ -61,6 +61,17 @@ A work order (`benchx/work-order/0.1.0`) has four required groups matching `runn
 
 All target kinds name something that already exists; none causes a checkout, configure, or build. `source.uri` names the canonical repository; `source_dir`, when given, is the local checkout path the runner inspects for revision/dirty/tree facts. Absent, the runner falls back to whatever the target itself records (e.g. a build directory's own `CMAKE_HOME_DIRECTORY`).
 
+Every target kind also takes four optional fields of user-owned provenance text, copied unchanged from the target description a target provider returned (`system-decomposition.md` §3.4, `schemas/target-description/0.1.0`):
+
+| Field | Meaning | Lands in result as |
+|---|---|---|
+| `how_built` | what the user did to build the target: the commands, or the build script's name | `provenance.info.how_built` |
+| `activation` | what the user ran to enter the target's environment: sourcing a script, loading modules, exporting library paths | `provenance.info.activation` |
+| `shell` | the shell `activation` is written for, such as `bash` | `provenance.info.shell` |
+| `provider` | `{name, version}` of the target provider that produced the description | `provenance.info.target_provider` |
+
+All four are declared facts (`benchmark-environments.md` §3.2): the runner records them as given, never executes them, and never checks them against anything. The user activates the environment before invoking benchx, and the runner records the environment it inherited (§5.3 `env`) beside the declaration, so a reader sees both and the runner picks no winner. Absent, null, empty, and whitespace-only all mean not declared, and the runner omits the key. None of the four enters identity, so rewording a recipe never splits a series. They are copied verbatim into results, which may reach a shared store, so they must not hold secrets.
+
 ### 3.2 Draft and resolved orders
 
 A person or tool may write a **draft**: a branch name instead of a commit, `include` globs instead of cases, a policy without a version. Before execution it becomes a **resolved** order, with full commit ids, a pinned policy version, and an expanded `plan`. Results cite the resolved order's hash, never the draft's.

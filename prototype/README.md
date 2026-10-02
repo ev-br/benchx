@@ -14,16 +14,31 @@ bx head [-n 10] [--json]                 # the latest results in the store, newe
 bx compare --run KEY --profile revisions|environments --baseline VALUE
            [--label NAME] [--results DIR] [--k 3] [--json]
                                          # read mode: compare results already measured
+bx target describe|prepare TARGET        # a target's description (a provider's answer, or a build directory's sidecar)
 bx compare BASELINE CONTENDER --profile revisions|environments
            --suite NAME [--filter REGEX] [--quantity wall-time]
            --rounds R [--repetitions N] [--min-time S]
            [--project P] [--label NAME=BASE,CONTENDER]
-           [--run-key KEY] [--out DIR] [--k 3] [--json]
+           [--run-key KEY] [--out DIR] [--no-build] [--k 3] [--json]
                                          # measure mode: run both sides, then compare
 ```
 
-Each target is `BUILD_DIR[:SOURCE_DIR]`. Two targets select measure mode and
-`--run` selects read mode; mixing them is an error.
+Each target is `BUILD_DIR[:SOURCE_DIR]` or `@CONFIG[=SOURCE_REF]`. Two targets
+select measure mode and `--run` selects read mode; mixing them is an error.
+
+`@CONFIG` asks the project's **target provider**, the command named in
+`.benchx/provider.json` (`{"command": [...]}`, found by walking up from the
+current directory). The provider speaks the contract of
+`system-decomposition.md` §3.4: a JSON request on stdin, a target description
+(`schemas/target-description/0.1.0`) on stdout, build output on stderr, and a
+nonzero exit for failure. `prepare`, the default, may build; `describe`
+(`--no-build`) only reports what exists. A build directory may also carry its own
+description as `.benchx-target.json`. A description names the target and may
+declare `how_built` and `activation` text, which are copied into the work order
+and into every result's `provenance.info`, shown in the comparison, and never
+executed or checked: you activate the environment yourself, and the runner
+records the allowlisted variables it inherited beside your declaration.
+`examples/archery-local` is a complete walk-through.
 
 ## What it does
 
@@ -37,7 +52,7 @@ Each target is `BUILD_DIR[:SOURCE_DIR]`. Two targets select measure mode and
   (`--no-ingest` to skip). Each result is valid against the result schema on `main`
   (`schemas/measurement-result/0.1.0`). It records the
   zero-configuration snapshot (`machine/v1` identity, OS, kernel, load,
-  allowlisted thread variables), the source's revision, dirty state, and tree
+  allowlisted thread and loader variables, extensible with `$BENCHX_ENV_ALLOWLIST`), the source's revision, dirty state, and tree
   id, the build configuration from `CMakeCache.txt`, and declared facts from
   `.benchx/setup.json`. It changes nothing on the machine and builds nothing,
   and it refuses an order that names a deferred field (`environment_policy`,
@@ -114,6 +129,7 @@ benchx/
   adapters/gbench.py Google Benchmark, driving and translating halves
   runner.py          one work order in, results out
   session.py         the session loop: alternate two targets over rounds, then compare
+  target.py          target descriptions: the provider call, the sidecar, the declared text
   identity.py        fingerprints, identity policy, series points (schema §4.3, §4.5)
   parquet.py         the store's row: #30's columns plus derived ones
   store.py           the single-file Parquet store and the ingest contract (schema §5.4)
@@ -121,6 +137,7 @@ benchx/
   cli.py             bx (compare has a read mode and a measure mode)
 ../schemas/          the result and work-order schemas, read in place ($BENCHX_SCHEMAS overrides)
 examples/demo-suite  a two-benchmark Google Benchmark suite for the demo
+examples/archery-local  an end-to-end, Arrow-local-shaped example with a target provider (own README)
 tests/               test_prototype.py: the success criteria and the runner and store
                      rules, on a fake Google Benchmark binary; test_comparator.py: the
                      comparator's invariants and method on hand-built results
