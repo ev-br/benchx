@@ -190,7 +190,8 @@ def run_case(runnable, case, flags, env, timeout, native_path) -> dict:
     driver.write_text(DRIVER.format(
         digest_key=ENV_DIGEST_KEY, worker_env=str(worker_env.resolve()), module=str(runnable["module"]),
         module_dir=str(runnable["module"].parent), root=str(runnable["root"]), case=case))
-    args = [runnable["python"], str(driver), *flags, "-o", str(native_path)]
+    # Absolute: the child runs in the tree, not where the output directory was named.
+    args = [runnable["python"], str(driver.resolve()), *flags, "-o", str(native_path.resolve())]
     started = time.time()
     # Its own process group, so a timeout takes the workers down with the manager.
     proc = subprocess.Popen(args, env=env, cwd=runnable["root"], text=True, start_new_session=True,
