@@ -5,7 +5,9 @@ $BENCHX_SCHEMAS: the result schema (schemas/measurement-result/0.1.0) and the
 work-order schema (schemas/work-order/0.1.0, from docs/design/runner-schema.md,
 authoritative over the earlier work-order.md proposal). The work-order schema is
 extended here by one optional field the prototype needs and the schema does
-not itself define, `slot` (`round` is now a native field).
+not itself define, `slot` (`round` is now a native field). The target
+description and the target provider request schemas (system-decomposition.md
+§3.4) are read the same way.
 """
 
 import copy
@@ -30,6 +32,8 @@ def _schema(relative: str) -> dict:
 
 RESULT_SCHEMA = _schema("measurement-result/0.1.0/schema.json")
 _ORDER_SCHEMA = _schema("work-order/0.1.0/schema.json")
+DESCRIPTION_SCHEMA = _schema("target-description/0.1.0/schema.json")
+REQUEST_SCHEMA = _schema("target-provider-request/0.1.0/schema.json")
 
 ORDER_SCHEMA = copy.deepcopy(_ORDER_SCHEMA)
 ORDER_SCHEMA["properties"]["slot"] = {
@@ -40,10 +44,12 @@ ORDER_SCHEMA["properties"]["slot"] = {
 }
 
 _REGISTRY = Registry().with_resources(
-    (schema["$id"], Resource.from_contents(schema)) for schema in (RESULT_SCHEMA, ORDER_SCHEMA)
+    (schema["$id"], Resource.from_contents(schema)) for schema in (RESULT_SCHEMA, ORDER_SCHEMA, DESCRIPTION_SCHEMA, REQUEST_SCHEMA)
 )
 _RESULT_VALIDATOR = jsonschema.Draft202012Validator(RESULT_SCHEMA, registry=_REGISTRY)
 _ORDER_VALIDATOR = jsonschema.Draft202012Validator(ORDER_SCHEMA, registry=_REGISTRY)
+_DESCRIPTION_VALIDATOR = jsonschema.Draft202012Validator(DESCRIPTION_SCHEMA, registry=_REGISTRY)
+_REQUEST_VALIDATOR = jsonschema.Draft202012Validator(REQUEST_SCHEMA, registry=_REGISTRY)
 
 
 class DocumentError(Exception):
@@ -114,3 +120,11 @@ def validate_result(document: dict) -> None:
 
 def validate_order(order: dict) -> None:
     _validate(_ORDER_VALIDATOR, order, "work order")
+
+
+def validate_description(description: dict) -> None:
+    _validate(_DESCRIPTION_VALIDATOR, description, "target description")
+
+
+def validate_request(request: dict) -> None:
+    _validate(_REQUEST_VALIDATOR, request, "target provider request")

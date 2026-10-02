@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import compare as compare_mod
 from . import runner, session
+from . import target as target_mod
 from .store import Store
 
 
@@ -82,13 +83,28 @@ def cmd_head(args):
     return 0
 
 
+def cmd_target(args):
+    """Ask for a target's description: `describe` only reports, `prepare` may
+    build (the provider's own tools do that, never benchx)."""
+    try:
+        description = target_mod.resolve(args.target, operation=args.operation)
+    except target_mod.TargetError as e:
+        print(f"cannot {args.operation} {args.target}: {e}", file=sys.stderr)
+        return 2
+    if description is None:
+        print(f"{args.target} has no description: no {target_mod.SIDECAR} in it", file=sys.stderr)
+        return 1
+    print(json.dumps(description, indent=1))
+    return 0
+
+
 class UsageError(Exception):
     """The arguments do not select a mode, or mix the two."""
 
 
 # Flags that belong to one mode of `bx compare` (prototype-design.md §1).
 _MEASURE_ONLY = ("suite", "filter", "quantity", "rounds", "repetitions", "min_time", "project", "run_key",
-                 "out", "source_uri")
+                 "out", "source_uri", "no_build")
 _READ_ONLY = ("baseline", "results")
 
 
@@ -147,7 +163,7 @@ def _measure(args):
             *args.targets, profile=args.profile, suite=args.suite, rounds=args.rounds, store=store,
             filter=args.filter, quantity=args.quantity or "wall-time", repetitions=args.repetitions or 5,
             min_time=args.min_time, project=args.project, label=label, run_key=args.run_key, out=args.out,
-            source_uri=args.source_uri, k=args.k, min_rounds=args.min_rounds,
+            source_uri=args.source_uri, k=args.k, min_rounds=args.min_rounds, build=not args.no_build,
             progress=lambda message: print(message, file=sys.stderr))
     except runner.Refused as e:
         print(f"refused: {e}", file=sys.stderr)
@@ -200,11 +216,20 @@ def main(argv=None):
     p.add_argument("--json", action="store_true", help="print the stored documents instead")
     p.set_defaults(fn=cmd_head)
 
+    p = sub.add_parser("target", help="ask for a target's description (schemas/target-description/0.1.0)",
+                       description="TARGET is @CONFIG[=SOURCE_REF], asking the provider named in "
+                                   ".benchx/provider.json, or a build directory holding .benchx-target.json. "
+                                   "describe only reports a target that exists; prepare may build it.")
+    p.add_argument("operation", choices=["describe", "prepare"])
+    p.add_argument("target")
+    p.set_defaults(fn=cmd_target)
+
     p = sub.add_parser("compare", help="compare two sides: read mode (--run) or measure mode (two targets)",
                        description="Read mode compares results already measured: --run KEY --baseline VALUE. "
                                    "Measure mode runs two prepared build directories, alternating them over "
                                    "--rounds rounds, delivers the results to the local store, then compares: "
-                                   "BASELINE CONTENDER --suite NAME --rounds R, each target BUILD_DIR[:SOURCE_DIR].")
+                                   "BASELINE CONTENDER --suite NAME --rounds R, each target BUILD_DIR[:SOURCE_DIR] "
+                                   "or @CONFIG[=SOURCE_REF] (the project's target provider).")
     p.add_argument("targets", nargs="*", metavar="TARGET", help="measure mode: BASELINE CONTENDER")
     p.add_argument("--profile", required=True, choices=["revisions", "environments"])
     p.add_argument("--k", type=float, default=3.0)
@@ -227,6 +252,8 @@ def main(argv=None):
     measure.add_argument("--project", help="name a project, so the results join its series; omit for an ad hoc run")
     measure.add_argument("--run-key", help="default: compare-<UTC timestamp>")
     measure.add_argument("--out", help="directory for orders and result files (default ./results/RUN_KEY)")
+    measure.add_argument("--no-build", action="store_true",
+                         help="ask a provider to describe each @CONFIG target instead of preparing (building) it")
     measure.add_argument("--source-uri", help="the source's URI when the sides' checkouts do not share one")
     p.set_defaults(fn=cmd_compare)
 

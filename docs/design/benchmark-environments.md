@@ -56,15 +56,15 @@ With no configuration, benchx detects the following where the platform makes the
 |---|---|
 | **Host** | host name, CPU model, core and hardware-thread counts, memory, architecture, visible accelerators and their models |
 | **System** | OS and version, kernel, libc, frequency governor, turbo and SMT state, load average, temperature |
-| **Process** | CPU affinity mask, cgroup CPU and memory limits, and an allowlist of environment variables that shape execution: `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`, `CUDA_VISIBLE_DEVICES`, and similar |
+| **Process** | CPU affinity mask, cgroup CPU and memory limits, and an allowlist of environment variables that shape execution: the thread and device variables (`OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`, `CUDA_VISIBLE_DEVICES`, and similar) and the dynamic loader's search variables (`LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`, `LD_PRELOAD`) |
 | **Runtime** | interpreter or VM and its version; installed package versions as a dependency manifest artifact |
 | **Source** | revision, dirty flags, and working-tree ids of the subject and benchmark checkouts (schema §4.1) |
 
-Three rules apply. A value that cannot be read is absent, never a placeholder. The process environment is never dumped wholesale, because CI environments carry secrets; only allowlisted variables are recorded, and a project can extend the allowlist. And because the harness runs as a child of the runner, the process-level facts the runner reads from itself, after applying any launch settings from the work order, are the ones the harness actually ran under. Where the order applied a setting, the applied value is recorded as enforced; where it did not, the inherited value is recorded as observed.
+Three rules apply. A value that cannot be read is absent, never a placeholder. The process environment is never dumped wholesale, because CI environments carry secrets; only allowlisted variables are recorded, and a project can extend the allowlist. The default list names no build or environment management tool, so variables such as a virtual-environment or conda prefix are for the project to add; `how_built` and `activation` (§3.2) say how the environment was entered, whichever tool was used. And because the harness runs as a child of the runner, the process-level facts the runner reads from itself, after applying any launch settings from the work order, are the ones the harness actually ran under. Where the order applied a setting, the applied value is recorded as enforced; where it did not, the inherited value is recorded as observed.
 
 ### 3.2 Declared facts
 
-What cannot be detected is declared by the user: how a dependency was installed and built, which BLAS is linked, the build configuration of a directory benchx was pointed at, the playbook or image version a node was prepared with, an operator-assigned runner name, a cloud instance type. Declarations travel in the work order or project configuration and are recorded as given. They are not checked against anything.
+What cannot be detected is declared by the user: how a dependency was installed and built, which BLAS is linked, the build configuration of a directory benchx was pointed at, the playbook or image version a node was prepared with, an operator-assigned runner name, a cloud instance type. Declarations travel in the work order or project configuration and are recorded as given. They are not checked against anything. Two declarations come with every prepared target (`runner-schema.md` §3.1): `how_built`, what the user did to build it, and `activation`, what the user ran to enter its environment, with the `shell` it is written for. They are free text, recorded in `provenance.info` and never executed. The runner records the environment it inherited next to `activation`; when the two disagree, both stay.
 
 ### 3.3 Plugins
 
@@ -84,6 +84,7 @@ Placement follows the schema (§4.2); nothing new is introduced:
 | kernel, libc, driver, microcode, governor, turbo, load, temperature, image digest | `observed_context` |
 | full package inventory | dependency manifest artifact in `provenance` |
 | preparation playbook or image version | declared; `environment.metadata` by default, identity if the project's identity policy says so |
+| `how_built`, `activation`, `shell`, target provider | declared; `provenance.info`, never identity |
 
 Declared and detected map onto the schema's existing split between intended and realized. A declared setting is an intended value and lands in comparison context or the subject descriptor. The matching detected value is the realized one and lands in procedure or observed context. When a setting is detectable but nobody declared an intent, as with a thread cap inherited from the shell, the realized value is recorded as the intended one too. When declared and detected disagree, both are kept where this rule puts them; benchx picks no winner, and a comparator can see the disagreement.
 

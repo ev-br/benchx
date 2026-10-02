@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import __version__, core, snapshot
+from . import target as target_mod
 from .adapters import gbench
 
 RUNNER = {"name": "benchx-prototype", "version": __version__}
@@ -113,6 +114,10 @@ def run(order_path, out_dir) -> dict:
     environment = snapshot.environment()
     observed = snapshot.observed_context(child_env)
     configuration = snapshot.cmake_configuration(build_dir)
+    # Declared by the user, recorded as given, never executed or checked (runner-schema.md §3.1).
+    declared_text = target_mod.text(order["target"])
+    if "provider" in declared_text:
+        declared_text["target_provider"] = declared_text.pop("provider")
     setup, setup_warning = snapshot.setup_facts(source["path"], child_env)
     if setup:
         observed["setup"] = setup  # declared; no placement rules in the prototype
@@ -153,6 +158,7 @@ def run(order_path, out_dir) -> dict:
                 info["google_benchmark"] = native_info
             if "reason" in order:
                 info["reason"] = order["reason"]
+            info.update(declared_text)
             provenance = {
                 "run_key": order["run_key"],
                 "started_at": _timestamp(run_["started"]),
