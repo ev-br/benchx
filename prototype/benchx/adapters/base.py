@@ -32,7 +32,12 @@ Translating half (harness-adapter.md §6)
 
 Optional hooks (the runner calls them when present)
     comparison_extras(info)   -> more `comparison_context` keys, such as host runtime
-    observed_environment(run, case, env_allowlist) -> (facts, warnings): facts
+    ENV_ALLOWLIST             -> names of environment variables this harness's
+                              ecosystem cares about, added to the core default and
+                              the project's $BENCHX_ENV_ALLOWLIST. The runner
+                              composes the list once and passes it to `run_case`
+                              as `env_names` and to `observed_environment`
+    observed_environment(run, case, env_names) -> (facts, warnings): facts
                               replace the runner's own `observed_context` keys
                               (None drops one), warnings go to `quality.warnings`.
                               For an adapter that can see the environment its

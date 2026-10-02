@@ -102,7 +102,7 @@ def list_cases(binary, case_filter, env) -> list[str]:
     return [line.strip() for line in out.stdout.splitlines() if line.strip()]
 
 
-def run_case(binary, case, flags, env, timeout, native_path) -> dict:
+def run_case(binary, case, flags, env, timeout, native_path, env_names=()) -> dict:
     """Run one case; never raises for harness failures, which become results."""
     args = [str(binary), f"--benchmark_filter=^{re.escape(case)}$",
             f"--benchmark_out={native_path}", "--benchmark_out_format=json", *flags]

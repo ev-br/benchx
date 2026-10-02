@@ -122,7 +122,8 @@ def run(order_path, out_dir) -> dict:
 
     parameters = dict(order.get("environment_variables", {}))
     environment = snapshot.environment()
-    observed = snapshot.observed_context(child_env)
+    env_names = snapshot.env_allowlist(child_env, getattr(adapter, "ENV_ALLOWLIST", ()))
+    observed = snapshot.observed_context(child_env, env_names)
     # Declared by the user, recorded as given, never executed or checked (runner-schema.md §3.1).
     declared_text = target_mod.text(order["target"])
     if "provider" in declared_text:
@@ -148,7 +149,8 @@ def run(order_path, out_dir) -> dict:
     for index, case in enumerate(cases):
         stem = f"{index:04d}"
         native_path = artifacts_dir / f"{stem}.native.json"
-        run_ = adapter.run_case(runnable, case, invocation, child_env, order["timeouts"]["case_s"], native_path)
+        run_ = adapter.run_case(runnable, case, invocation, child_env, order["timeouts"]["case_s"], native_path,
+                              env_names=env_names)
         (artifacts_dir / f"{stem}.stdout").write_text(run_["stdout"])
         (artifacts_dir / f"{stem}.stderr").write_text(run_["stderr"])
         artifacts = [_artifact("stdout", "text/plain", artifacts_dir / f"{stem}.stdout"),
@@ -159,7 +161,7 @@ def run(order_path, out_dir) -> dict:
         native_observed, native_info = adapter.context_facts(run_["native"])
         case_observed, case_warnings = observed, []
         if hasattr(adapter, "observed_environment"):
-            facts, case_warnings = adapter.observed_environment(run_, case, snapshot.env_allowlist)
+            facts, case_warnings = adapter.observed_environment(run_, case, env_names)
             case_observed = {k: v for k, v in {**observed, **facts}.items() if v is not None}
         attempt_key = f"urn:benchx:attempt:{ref[7:23]}:{index}"
 

@@ -23,6 +23,7 @@ import sys
 import time
 from pathlib import Path
 
+from .. import snapshot
 from .base import Unsupported
 
 NAME = "pyperf"
@@ -46,8 +47,8 @@ DEFAULTS = {
 DEFAULT_CASE_PREFIXES = ("bench_", "benchmark_")
 
 ENV_DIGEST_KEY = "benchx_env_sha256"
-# Variables recorded beside the runner's allowlist when set in a worker.
-EXTRA_ENV = ("PYTHONHASHSEED",)
+# Variables recorded beside the core and project allowlist when set in a worker.
+ENV_ALLOWLIST = ("PYTHONHASHSEED",)
 
 
 def env_digest(env: dict) -> str:
@@ -169,7 +170,9 @@ runner = pyperf.Runner()
 runner.parse_args()
 runner.metadata[{digest_key!r}] = _DIGEST
 if runner.args.worker:
-    Path({worker_env!r}).write_text(json.dumps(_ENV, sort_keys=True))
+    # Only the allowlisted names: the digest above covers the whole environment,
+    # the file is shared, and CI environments carry secrets.
+    Path({worker_env!r}).write_text(json.dumps({{k: _ENV[k] for k in {env_names!r} if k in _ENV}}, sort_keys=True))
 
 sys.path[:0] = [{module_dir!r}, {root!r}]
 spec = importlib.util.spec_from_file_location("benchx_suite", {module!r})
@@ -180,15 +183,17 @@ runner.bench_func({case!r}, getattr(module, {case!r}))
 '''
 
 
-def run_case(runnable, case, flags, env, timeout, native_path) -> dict:
+def run_case(runnable, case, flags, env, timeout, native_path, env_names=None) -> dict:
     """Run one case; never raises for harness failures, which become results."""
+    if env_names is None:
+        env_names = snapshot.env_allowlist(env, ENV_ALLOWLIST)
     stem = native_path.name.removesuffix(".native.json")
     driver = native_path.with_name(f"{stem}.driver.py")
     worker_env = native_path.with_name(f"{stem}.worker-env.json")
     for stale in (native_path, worker_env):
         stale.unlink(missing_ok=True)
     driver.write_text(DRIVER.format(
-        digest_key=ENV_DIGEST_KEY, worker_env=str(worker_env.resolve()), module=str(runnable["module"]),
+        digest_key=ENV_DIGEST_KEY, worker_env=str(worker_env.resolve()), env_names=list(env_names), module=str(runnable["module"]),
         module_dir=str(runnable["module"].parent), root=str(runnable["root"]), case=case))
     # Absolute: the child runs in the tree, not where the output directory was named.
     args = [runnable["python"], str(driver.resolve()), *flags, "-o", str(native_path.resolve())]
@@ -351,7 +356,7 @@ def context_facts(native: dict | None) -> tuple[dict, dict]:
     return observed, info
 
 
-def observed_environment(run: dict, case: str, env_allowlist) -> tuple[dict, list[str]]:
+def observed_environment(run: dict, case: str, env_names) -> tuple[dict, list[str]]:
     """The environment the workers actually had, and the warnings about it.
 
     Facts come from the worker-side capture, never from what the manager
@@ -364,8 +369,7 @@ def observed_environment(run: dict, case: str, env_allowlist) -> tuple[dict, lis
     captured = run.get("worker_env")
     facts = {"env": None}
     if captured is not None:
-        names = [n for n in env_allowlist(captured) + EXTRA_ENV if n in captured]
-        facts["env"] = {n: captured[n] for n in names}
+        facts["env"] = {n: captured[n] for n in env_names if n in captured}
     native = run["native"]
     benchmark = _benchmark(native, case)
     if benchmark is not None:
