@@ -327,3 +327,15 @@ def test_pythonhashseed_is_recorded_when_set(tmp, tree):
     doc = run_order(tmp, document, "hashseed")[0]
     assert doc["measurement"]["status"] == "success"
     assert doc["observed_context"]["env"]["PYTHONHASHSEED"] == "7"
+
+
+def test_relative_output_directory(tmp, tree, monkeypatch):
+    """The workers run in the tree, so the driver and output paths must not depend on the caller's cwd."""
+    elsewhere = tmp / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    order_path = tmp / "rel.json"
+    order_path.write_text(json.dumps(pyperf_order(tree, "rel")))
+    runner.run(order_path, Path("rel-out"))
+    docs = results(elsewhere / "rel-out")
+    assert [d["measurement"]["status"] for d in docs] == ["success"]
