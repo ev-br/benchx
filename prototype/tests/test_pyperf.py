@@ -124,6 +124,25 @@ def test_environment_passes_through_to_the_workers(tmp, tree):
     assert "quality" not in doc
 
 
+NAMES = snapshot.env_allowlist({}, adapter.ENV_ALLOWLIST)
+
+
+def test_the_worker_environment_artifact_holds_only_allowlisted_names(tmp, tree):
+    env = {"OPENBLAS_NUM_THREADS": "1", "PYTHONHASHSEED": "0", "MY_CI_TOKEN": "hunter2"}
+    _, _, run = _case_run(tmp, tree, None, "f", env=env)
+    kind, _, path = next(a for a in run["artifacts"] if a[0] == "worker-environment")
+    assert "hunter2" not in path.read_text()
+    assert run["worker_env"]["OPENBLAS_NUM_THREADS"] == "1" and run["worker_env"]["PYTHONHASHSEED"] == "0"
+    assert "MY_CI_TOKEN" not in run["worker_env"]
+    assert adapter.observed_environment(run, "f", NAMES)[1] == []  # the digest still covers everything
+
+
+def test_a_project_name_reaches_the_worker_capture(tmp, tree):
+    env = {"BENCHX_ENV_ALLOWLIST": "MY_FLAG", "MY_FLAG": "on"}
+    _, _, run = _case_run(tmp, tree, None, "f", env=env)
+    assert run["worker_env"]["MY_FLAG"] == "on"
+
+
 def _case_run(tmp, tree, flags, case, env=None):
     env = {**os.environ, **(env or {})}
     runnable = adapter.locate(tree, "mod.py", env)
@@ -148,28 +167,32 @@ def test_scrubbed_workers_are_reported_as_env_mismatch(tmp, tree):
     without = [f for f in invocation if f != "--copy-env"]
     _, _, run = _case_run(tmp, tree, without, "f")
     assert run["native"] is not None
-    facts, warnings = adapter.observed_environment(run, "f", snapshot.env_allowlist)
+    facts, warnings = adapter.observed_environment(run, "f", NAMES)
     assert warnings == ["env-mismatch"]
     assert facts["env"] is not None  # what the workers had, however little
 
 
 def test_digest_mismatch_with_a_fake_native_file(tmp, tree):
     _, _, run = _case_run(tmp, tree, None, "f")
-    assert adapter.observed_environment(run, "f", snapshot.env_allowlist)[1] == []
+    assert adapter.observed_environment(run, "f", NAMES)[1] == []
     tampered = copy.deepcopy(run)
     tampered["native"]["metadata"][adapter.ENV_DIGEST_KEY] = "0" * 64
-    assert adapter.observed_environment(tampered, "f", snapshot.env_allowlist)[1] == ["env-mismatch"]
+    assert adapter.observed_environment(tampered, "f", NAMES)[1] == ["env-mismatch"]
     missing = copy.deepcopy(run)
     del missing["native"]["metadata"][adapter.ENV_DIGEST_KEY]
-    assert adapter.observed_environment(missing, "f", snapshot.env_allowlist)[1] == ["env-mismatch"]
+    assert adapter.observed_environment(missing, "f", NAMES)[1] == ["env-mismatch"]
     uncaptured = dict(run, worker_env=None)
-    facts, warnings = adapter.observed_environment(uncaptured, "f", snapshot.env_allowlist)
+    facts, warnings = adapter.observed_environment(uncaptured, "f", NAMES)
     assert warnings == ["env-capture-missing"] and facts["env"] is None  # nothing substituted
 
 
 def test_driver_digest_matches_the_adapters(tmp, tree):
     _, env, run = _case_run(tmp, tree, None, "f")
-    assert adapter.env_digest(run["worker_env"]) == adapter.env_digest(env) == run["passed_env_digest"]
+    digests = {md.get(adapter.ENV_DIGEST_KEY) for md in [run["native"]["metadata"],
+                                                         *(r["metadata"] for r in run["native"]["benchmarks"][0]["runs"])]
+               if adapter.ENV_DIGEST_KEY in md}
+    assert digests == {adapter.env_digest(env)} == {run["passed_env_digest"]}  # over the whole environment
+    assert adapter.env_digest(run["worker_env"]) != adapter.env_digest(env)  # the capture is filtered
 
 
 def test_environment_variables_make_distinct_workload_variants(tmp, tree):
