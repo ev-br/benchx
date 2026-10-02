@@ -170,6 +170,8 @@ def run(order_path, out_dir) -> dict:
             if slot is not None:
                 procedure["slot"] = slot
             procedure["timeout_seconds"] = order["timeouts"]["case_s"]
+            if hasattr(adapter, "repetition_levels"):
+                procedure["repetition_levels"] = adapter.repetition_levels(applied_protocol, run_, case)
             info = {"workorder_ref": ref, "requester": order["requester"], **output["info"]}
             if native_info:
                 info[adapter.CONTEXT_KEY] = native_info
@@ -234,7 +236,7 @@ def run(order_path, out_dir) -> dict:
                 document["measurement"] = {"status": "error", "reason": "adapter.mapping-failed"}
                 document["provenance"]["info"]["mapping_error"] = e.message
                 document["procedure"] = {k: v for k, v in procedure.items()
-                                         if k not in ("inner_iterations", "completed_repetitions")}
+                                         if k not in ("inner_iterations", "completed_repetitions", "repetition_levels")}
                 core.validate_result(document)
             path = out_dir / file_name(key)
             path.write_bytes(core.canonical(document))

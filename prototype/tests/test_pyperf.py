@@ -85,6 +85,8 @@ def test_end_to_end_result(tmp, tree):
     assert doc["procedure"]["inner_iterations"] == 50
     assert doc["procedure"]["attempted_repetitions"] == doc["procedure"]["completed_repetitions"] == 4
     assert doc["procedure"]["warmups_performed"] == 2  # one per worker, dropped
+    assert doc["procedure"]["repetition_levels"] == [{"unit": "process", "attempted": 2, "completed": 2},
+                                                     {"unit": "value", "attempted": 4, "completed": 4}]
     protocol = doc["coordinates"]["comparison_context"]["protocol"]
     assert protocol["repetitions"]["levels"] == PRECISION["repetitions"]["levels"]
     assert protocol["environment"] == "inherit-all"
@@ -306,6 +308,24 @@ def test_fewer_runs_than_requested_is_partial():
     out = _translate(native, attempted=4)
     assert out["measurement"]["status"] == "partial" and out["measurement"]["reason"] == "harness.partial"
     assert out["procedure"]["completed_repetitions"] == 2
+
+
+def _levels(native, **run):
+    record = {"exit_status": 0, "timed_out": False, "native": native, **run}
+    return adapter.repetition_levels(PRECISION, record, "f")
+
+
+def test_a_lost_process_shows_at_the_process_level():
+    native = json.loads((FIXTURES / "pyperf-native.json").read_text())
+    assert [lv["completed"] for lv in _levels(native)] == [2, 4]
+    del native["benchmarks"][0]["runs"][-1]
+    assert _levels(native) == [{"unit": "process", "attempted": 2, "completed": 1},
+                               {"unit": "value", "attempted": 4, "completed": 2}]
+
+
+def test_no_output_completes_no_level():
+    assert _levels(None) == [{"unit": "process", "attempted": 2, "completed": 0},
+                             {"unit": "value", "attempted": 4, "completed": 0}]
 
 
 def test_a_missing_output_file_is_an_error_result():

@@ -3,7 +3,7 @@
   "$id": "urn:benchx:schema:measurement-result:0.1.0",
   "title": "BenchX measurement result ingest object",
   "description": "One measurement attempt for one quantity and one workload variant, as reported by a producer. See docs/design/benchmark-result-schema.md section 5. Producers report coordinates and evidence; comparison identity, series, and series points are derived by the server and are never part of this message.",
-  "$comment": "Rules the schema cannot express and the server enforces at ingest: the primary subject component's source, when present, equals the top-level source URI; a quantity's unit never changes once used in a project; at most one estimate summary per estimator declaration; results sharing an attempt_key agree on the fields listed in section 5.3; identical (producer, ingest_key) payloads are idempotent and differing ones conflict; UCUM unit syntax; interval lower bounds not exceeding upper bounds; completed_repetitions never exceeding attempted_repetitions; exactly one provenance.references entry per compound input role; comparison profiles (section 5.5) are checked by the comparator, not here. A result without project or benchmark is thin (section 4.1): valid, comparable within its run, and joinable to tracked series only through an approved mapping.",
+  "$comment": "Rules the schema cannot express and the server enforces at ingest: the primary subject component's source, when present, equals the top-level source URI; a quantity's unit never changes once used in a project; at most one estimate summary per estimator declaration; results sharing an attempt_key agree on the fields listed in section 5.3; identical (producer, ingest_key) payloads are idempotent and differing ones conflict; UCUM unit syntax; interval lower bounds not exceeding upper bounds; completed_repetitions never exceeding attempted_repetitions, and likewise completed never exceeding attempted at each repetition level; exactly one provenance.references entry per compound input role; comparison profiles (section 5.5) are checked by the comparator, not here. A result without project or benchmark is thin (section 4.1): valid, comparable within its run, and joinable to tracked series only through an approved mapping.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -255,6 +255,21 @@
         "inner_iterations": { "type": "integer", "minimum": 1 },
         "attempted_repetitions": { "type": "integer", "minimum": 1 },
         "completed_repetitions": { "type": "integer", "minimum": 0 },
+        "repetition_levels": {
+          "description": "Realized counterpart of a multi-level protocol.repetitions, outermost level first. Counts are totals over the attempt, so 20 processes of 3 values each attempt 20 processes and 60 values. attempted_repetitions and completed_repetitions remain the totals at the innermost level.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["unit", "attempted", "completed"],
+            "properties": {
+              "unit": { "$ref": "#/$defs/token" },
+              "attempted": { "type": "integer", "minimum": 1 },
+              "completed": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
         "warmups_performed": { "type": "integer", "minimum": 0 },
         "duration_seconds": { "type": "number", "minimum": 0 },
         "caches_cleared": {
