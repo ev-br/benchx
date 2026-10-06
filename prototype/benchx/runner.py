@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import __version__, core, snapshot
+from . import target as target_mod
 from .adapters import gbench
 
 RUNNER = {"name": "benchx-prototype", "version": __version__}
@@ -18,6 +19,16 @@ RUNNER = {"name": "benchx-prototype", "version": __version__}
 
 class Refused(Exception):
     """The order cannot be carried out as written; nothing was run."""
+
+
+# Order fields whose feature the prototype does not implement. Ignoring one
+# would run the order without what it asked for, so the runner refuses it.
+DEFERRED = {
+    "environment_policy": "enforcing launch settings and verifying requested hardware",
+    "build": "a declared build configuration (the runner reads CMakeCache.txt)",
+    "components": "pinned components",
+    "schedule": "side scheduling (the session loop alternates the sides)",
+}
 
 
 def _timestamp(epoch: float) -> str:
@@ -70,6 +81,9 @@ def check(order: dict) -> None:
     unknown = set(order["quantities"]) - set(gbench.QUANTITIES)
     if unknown:
         raise Refused(f"quantities not supported: {sorted(unknown)}")
+    for field, what in DEFERRED.items():
+        if field in order:
+            raise Refused(f"{field} is deferred in the prototype: {what}")
     try:
         gbench.protocol(order["precision"])
     except gbench.Unsupported as e:
@@ -100,6 +114,10 @@ def run(order_path, out_dir) -> dict:
     environment = snapshot.environment()
     observed = snapshot.observed_context(child_env)
     configuration = snapshot.cmake_configuration(build_dir)
+    # Declared by the user, recorded as given, never executed or checked (runner-schema.md §3.1).
+    declared_text = target_mod.text(order["target"])
+    if "provider" in declared_text:
+        declared_text["target_provider"] = declared_text.pop("provider")
     setup, setup_warning = snapshot.setup_facts(source["path"], child_env)
     if setup:
         observed["setup"] = setup  # declared; no placement rules in the prototype
@@ -140,6 +158,7 @@ def run(order_path, out_dir) -> dict:
                 info["google_benchmark"] = native_info
             if "reason" in order:
                 info["reason"] = order["reason"]
+            info.update(declared_text)
             provenance = {
                 "run_key": order["run_key"],
                 "started_at": _timestamp(run_["started"]),

@@ -99,7 +99,11 @@ def order(build: Path, source: Path | None, run_key: str, **extra) -> dict:
 
 
 def run_rounds(tmp: Path, sides: list[dict], rounds: int, run_key: str, out: Path, **extra) -> Path:
-    """The calling script's loop: alternate the sides, assign round and slot."""
+    """Alternate the sides and assign round and slot, writing result files only.
+
+    Unlike benchx.session (the real loop, which delivers to a store and
+    compares), this lets a test put arbitrary fields in the orders.
+    """
     slot = 0
     for r in range(rounds):
         for side in sides:

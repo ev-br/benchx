@@ -154,20 +154,49 @@ def test_alternation_is_checked(repo, tmp):
     assert [f["invariant"] for f in doc["failed_invariants"]] == ["alternation"]
 
 
-def test_ad_hoc_is_thin_and_dirty_is_local_only(repo, tmp):
-    """Criterion 7: no project, no configuration; a dirty side is local-only."""
+def _dirty_run(repo, tmp, profile_sides, run_key):
     (repo["wt-head"] / "bench.cpp").write_text("// work = 103, uncommitted\n")
     base = make_build(tmp / "b1", repo["wt-base"], cases())
     head = make_build(tmp / "b2", repo["wt-head"], cases())
-    out = run_rounds(tmp, [{"build": base, "source": repo["wt-base"]}, {"build": head, "source": repo["wt-head"]}],
-                     rounds=3, run_key="adhoc", out=tmp / "adhoc")
+    return run_rounds(tmp, profile_sides(base, head), rounds=3, run_key=run_key, out=tmp / run_key)
+
+
+def test_ad_hoc_is_thin_and_a_dirty_run_is_accepted(repo, tmp):
+    """Criterion 7: no project, no configuration; a dirty single run is recorded as dirty (UC-01)."""
+    out = _dirty_run(repo, tmp, lambda base, head: [{"build": base, "source": repo["wt-base"]},
+                                                     {"build": head, "source": repo["wt-head"]}], "adhoc")
     docs = results(out)
     assert all("project" not in d for d in docs)
+    assert {d["provenance"]["subject_dirty"] for d in docs} == {"clean", "dirty"}
+    store = Store(tmp / "store.parquet")
+    assert store.ingest_paths([out])["rejected"] == []
+    assert {s["project"] for s in store.series()} == {f"local/{docs[0]['coordinates']['environment']['identity']['runner']}"}
+
+
+def test_revisions_refuses_a_dirty_side(repo, tmp):
+    """Criterion 7, UC-03 §10: a revisions comparison with a dirty side gets no verdicts."""
+    out = _dirty_run(repo, tmp, lambda base, head: [{"build": base, "source": repo["wt-base"]},
+                                                     {"build": head, "source": repo["wt-head"]}], "dirty-rev")
     store = Store(tmp / "store.parquet")
     store.ingest_paths([out])
-    assert {s["project"] for s in store.series()} == {f"local/{docs[0]['coordinates']['environment']['identity']['runner']}"}
-    doc = compare.compare(store.documents("adhoc"), run_key="adhoc", profile="revisions", baseline=repo["base"])
-    assert doc["local_only"] is True
+    doc = compare.compare(store.documents("dirty-rev"), run_key="dirty-rev", profile="revisions",
+                          baseline=repo["base"])
+    assert [f["invariant"] for f in doc["failed_invariants"]] == ["clean-tree"]
+    assert doc["units"] == []
+
+
+def test_environments_labels_a_dirty_side_local_only(repo, tmp):
+    """Criterion 7, schema §5.5: the environments profile still allows a dirty side, labeled."""
+    out = _dirty_run(repo, tmp, lambda base, head: [
+        {"build": base, "source": repo["wt-head"], "labels": {"build": "a"}},
+        {"build": make_build(tmp / "b3", repo["wt-head"], cases(quiet=1.02e-3), hardened=True),
+         "source": repo["wt-head"], "labels": {"build": "b"}}], "dirty-env")
+    store = Store(tmp / "store.parquet")
+    store.ingest_paths([out])
+    doc = compare.compare(store.documents("dirty-env"), run_key="dirty-env", profile="environments",
+                          label="build", baseline="a")
+    assert doc["failed_invariants"] == [] and doc["local_only"] is True
+    assert doc["units"]
 
 
 def test_tracked_series_and_history(revisions_run, tmp):
@@ -198,8 +227,17 @@ def test_failures_are_results(repo, tmp):
 
 @pytest.mark.parametrize("change, message", [
     (lambda o: o["precision"].update(warmup={"mode": "count", "n_warmup": 2}), "warmup"),
+    (lambda o: o.update(target={"kind": "working_tree", "path": "/tmp/x",
+                                "source": {"uri": SOURCE_URI, "type": "git"}}), "build targets"),
     (lambda o: o.update(target={"kind": "revision", "source": {"uri": SOURCE_URI, "type": "git"},
-                                "revision": "deadbeef"}), "build targets"),
+                                "revision": "deadbeef"}), "work order invalid"),  # the runner never builds
+    (lambda o: o.update(environment_policy={"name": "laptop-default", "version": "1.0.0"}),
+     "environment_policy is deferred"),
+    (lambda o: o.update(build={"type": "release"}), "build is deferred"),
+    (lambda o: o.update(components=[{"name": "numpy", "role": "dependency", "revision": "abc",
+                                     "source": {"uri": SOURCE_URI, "type": "git"}}]),
+     "components is deferred"),
+    (lambda o: o.update(schedule={"kind": "alternating"}), "schedule is deferred"),
     (lambda o: o["suites"][0].update(suite="missing-binary"), "not found"),
     (lambda o: o.update(quantities=["peak-rss"]), "quantities"),
     (lambda o: o.update(surprise=1), "work order invalid"),
