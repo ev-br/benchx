@@ -1,6 +1,6 @@
 # Runner Schemas: Work Order, Environment Policy, Run Context
 
-**Status:** Draft for review. **Authoritative** over `benchmark-environments.md` §2.2 principle 2, §2.3, and the runner-related items in §8's "Consequences for other design documents", and over the unmerged work-order proposal in PR #35, where they conflict: this document's environment-policy model (enforce/verify/refuse, §4) and buildable target kinds (§3.1) stand as designed. The contradiction is not otherwise reconciled in either document as of this writing; see `benchmark-environments.md` §8 for the disputed text.
+**Status:** Draft for review. **Authoritative** over `benchmark-environments.md` §2.2 principle 2, §2.3, and the runner-related items in §8's "Consequences for other design documents", and over the unmerged work-order proposal in `work-order.md`, where they conflict: this document's environment-policy model (enforce/verify/refuse, §4) and buildable target kinds (§3.1) stand as designed. The contradiction is not otherwise reconciled in either document as of this writing; see `benchmark-environments.md` §8 for the disputed text.
 
 **Companion to:** `runner.md` (PR #24), `benchmark-result-schema.md`
 
@@ -31,17 +31,19 @@ A work order (`benchx/work-order/0.1.0`) has four required groups matching `runn
 | `schema_version` | const | yes | — | `benchx/work-order/0.1.0` | — |
 | `work_order_id` | URI or UUID | yes | — | Stable name for this order | `provenance.artifacts` (kind `work-order`, with sha256) |
 | `state` | `draft` \| `resolved` | yes | — | Only `resolved` orders execute (§3.2) | — |
-| `project` | token | yes | what | Project in the store | `project` |
-| `suites[]` | array | yes | what | `{adapter, suite, include[], exclude[], parameters}` per harness suite | `coordinates.workload` via the adapter |
+| `project` | token | no | what | Project in the store; omit for an ad hoc run (results are then thin) | `project` |
+| `suites[]` | array | yes | what | `{adapter, suite, filter, include[], exclude[], parameters}` per harness suite; `filter` is a harness-native string, an alternative to `include`/`exclude` for adapters with only single-pattern selection | `coordinates.workload` via the adapter |
 | `quantities[]` | array of names | yes | what | Quantities to collect, e.g. `wall-time`, `peak-rss` | `coordinates.quantity` |
+| `environment_variables` | string map | no | what | `{NAME: value}` set on the measured process, on top of what the runner inherited; a workload coordinate, not a machine fact — `OMP_NUM_THREADS=1` and `=10` are different, non-pooling variants | `coordinates.workload.parameters` |
+| `workload_parameters` | map | no | what | Parameters passed to the runner or harness, never as environment variables; a name may not appear in both maps | `coordinates.workload.parameters` |
 | `target` | one of 4 kinds | yes | at what | What code to measure (§3.1) | `source`, `revision`, dirty flags, tree ids |
 | `benchmark` | object | no | at what | `{source, revision}` naming where the benchmark suite's own code lives, when different from `target` (§3.3, added here to close a gap) | top-level `benchmark.source`, `benchmark.revision` |
 | `components[]` | array | no | at what | Pinned non-primary components `{name, role, source, revision}` | `coordinates.subject.components` |
 | `build` | object | no | how | `{profile, type, compiler, flags[], options{}, cache}` | `coordinates.subject.configuration` |
-| `precision` | object | yes | how | `{repetitions, min_time_s, warmups, inner_iterations}` (harness-neutral names, from Appendix B keys) | intended: `comparison_context`; realized: `procedure` |
+| `precision` | object | yes | how | `{repetitions, calibration, warmup}`, spelled per Appendix B (`repetitions` a bare int or `{mode: fixed, levels[]}`; `calibration.mode`: `adaptive` + `minimum_sample_seconds`, or `fixed` + `n_iterations`; `warmup.mode`: `none`, `count` + `n_warmup`, or `time` + `seconds`) | intended: `comparison_context`; realized: `procedure` |
 | `schedule` | object | no | how | `{kind: sequential \| alternating \| random, seed}` across sides | `comparison_context.protocol.schedule`; realized `procedure.slot` |
 | `timeouts` | object | yes | how | `{case_s, order_s}`, both positive | exceeded: `censored` or `error` result |
-| `environment_policy` | `{name, version}` | yes | how | Named policy (§4) | policy identity in `coordinates.environment.identity` |
+| `environment_policy` | `{name, version}` | no | how | Named policy (§4); absent means the runner applies none and only records observed context, the default `benchmark-environments.md`'s laptop scenario describes | policy identity in `coordinates.environment.identity` |
 | `run_key` | token | yes | for whom | Groups this order with sibling orders in one comparison | `provenance.run_key` |
 | `round` | integer | no | for whom | Position in an interleaved run; set by the run author | `procedure.round` |
 | `labels` | string map | no | for whom | Caller labels, e.g. `{"env": "numpy-2.0"}` | `provenance.labels` |
@@ -54,9 +56,11 @@ A work order (`benchx/work-order/0.1.0`) has four required groups matching `runn
 | `target.kind` | Required fields | What the runner must verify |
 |---|---|---|
 | `revision` | `source.uri`, `revision` (full commit id) | Checkout matches `revision`; tree is clean after checkout |
-| `working_tree` | `path`, `source.uri` | Records HEAD, dirty state, and tree id as found; never cleans the tree |
-| `build` | `path`, `source.uri` | Build config and staleness vs. the tree it came from (`runner.md` open question 3) |
+| `working_tree` | `path`, `source.uri`; optional `source_dir` | Records HEAD, dirty state, and tree id as found at `source_dir` (default `path`); never cleans the tree |
+| `build` | `path`, `source.uri`; optional `source_dir` | Build config and staleness vs. the tree at `source_dir`, when it differs from what the build itself records (`runner.md` open question 3) |
 | `artifact` | `uri`, `sha256`, `source.uri`, `revision` | Checksum matches; `revision` is the artifact's declared source, taken on trust and flagged in `quality.warnings` |
+
+`source.uri` names the canonical repository; `source_dir`, when given, is the local checkout path the runner inspects for revision/dirty/tree facts. Absent, the runner falls back to whatever the target itself records (e.g. a build directory's own `CMAKE_HOME_DIRECTORY`).
 
 ### 3.2 Draft and resolved orders
 
@@ -66,7 +70,7 @@ Resolution happens as early as possible, and the runner fills in only what is le
 
 - **Resolution only fills gaps.** It never changes a field that is already fixed, so a fully resolved order passes through the runner unchanged.
 - **The requester resolves shared facts.** The scheduler, CI job, or workbench fixes everything that must be identical across sibling orders in a `run_key`: commit ids for branch names, policy versions, precision defaults, and the case list when it is knowable without a build. Resolving these once is what keeps both sides of a comparison on the same values.
-- **The runner resolves only facts about its own machine.** These are working-tree state (HEAD, dirty flag, tree id), the case list for harnesses that enumerate cases only after a build, and the values actually enforced by the policy. It then records the resolved order as a provenance artifact before execution starts.
+- **The runner resolves only facts about its own machine.** These are working-tree state (HEAD, dirty flag, tree id), the case list for harnesses that enumerate cases only after a build, and the values actually enforced by the policy. It then records the resolved order as a provenance artifact before execution starts. A `plan` entry the runner filled in this way carries `from`, the suite's `filter` or `include` pattern it was expanded from, so a runner-resolved entry stays traceable to what generated it, distinct from one a scheduler hand-authored.
 - **The runner refuses unresolved shared fields.** A draft that still names a branch, or a policy without a version, is refused rather than resolved against the runner's local clone or cache. That would infer the run from leftovers on the machine, which `runner.md` principle 1 forbids.
 
 So a person on a laptop can hand the runner a loose draft whose target is `working_tree`, which is only meaningful on that machine anyway, while a fleet order arrives already pinned.
