@@ -19,6 +19,7 @@ from pathlib import Path
 
 from . import compare as compare_mod
 from . import runner, snapshot, target as target_mod
+from .identity import normalize_remote
 
 PROFILES = ("revisions", "environments")
 CASE_TIMEOUT_S, ORDER_TIMEOUT_S = 60, 600
@@ -50,7 +51,7 @@ def _source_uri(source_dir: str) -> str:
     comparison report the same source."""
     origin = snapshot._run(["git", "remote", "get-url", "origin"], cwd=source_dir)
     if origin:
-        return origin
+        return normalize_remote(origin, base=source_dir)
     common = snapshot._run(["git", "rev-parse", "--git-common-dir"], cwd=source_dir)
     return Path(source_dir, common).resolve().parent.as_uri() if common else Path(source_dir).resolve().as_uri()
 
@@ -157,7 +158,11 @@ def compare_targets(baseline: str, contender: str, *, profile: str, suite: str, 
             if side["identity"]["dirty"] != "clean":
                 raise SessionError(f"{name} tree {side['source']} is {side['identity']['dirty']}; "
                                    "a revisions comparison needs clean trees (UC-03 §10)")
-    uris = {source_uri or side["uri"] or _source_uri(side["source"]) for side in sides}
+    if source_uri:
+        uris = {normalize_remote(source_uri)}
+    else:
+        uris = {normalize_remote(side["uri"], base=side["source"]) if side["uri"] else _source_uri(side["source"])
+                for side in sides}
     if len(uris) != 1:
         raise SessionError(f"the sides report different source URIs {sorted(uris)}; pass --source-uri")
     source_uri = uris.pop()
@@ -174,7 +179,7 @@ def compare_targets(baseline: str, contender: str, *, profile: str, suite: str, 
                            min_time=min_time, project=project, run_key=run_key, source_uri=source_uri,
                            round_=round_, slot=slot, labels=side_labels)
             path = out / "orders" / f"order-{slot:04d}.json"
-            path.write_text(json.dumps(order, indent=1))
+            path.write_text(json.dumps(order, indent=1) + "\n")
             summary = runner.run(path, out)
             outcome = store.ingest_paths(summary["files"])
             if outcome["rejected"]:
