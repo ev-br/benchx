@@ -81,7 +81,7 @@ def compare(documents, *, run_key, profile, baseline, label=None, k=3.0, min_rou
     if not documents:
         raise CompareError(f"no results for run {run_key!r}")
     sides, varying, problem = _sides(documents, profile, label)
-    doc = {"comparison_version": 1, "mode": "run", "run_key": run_key, "profile": profile,
+    doc = {"schema_version": "benchx/comparison-document/0.1.0", "mode": "run", "run_key": run_key, "profile": profile,
            "varying": varying, "baseline": baseline, "pairing": "procedure.round",
            "method": {**METHOD, "configuration": {"k": k, "min_rounds": min_rounds}},
            "estimator": dict(identity.MEDIAN), "identity_schema": identity.IDENTITY_SCHEMA,
