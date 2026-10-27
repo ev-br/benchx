@@ -53,6 +53,7 @@ from .base import Unsupported
 NAME = "asv"
 CONTEXT_KEY = "asv"
 WORKLOAD_PARAMETERS = False
+SUITE_IS_SOURCE = True  # the suite is Python source, as pyperf's
 PRODUCER = {"name": "benchx/asv-adapter", "version": "0.2.0", "mapping_version": "asv-on-pyperf/v1"}
 QUANTITIES = pyperf.QUANTITIES
 ENV_ALLOWLIST = pyperf.ENV_ALLOWLIST
